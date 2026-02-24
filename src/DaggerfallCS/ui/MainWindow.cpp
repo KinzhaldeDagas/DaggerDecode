@@ -558,9 +558,7 @@ void MainWindow::PopulateSubrecordList(arena2::TextRecord& rec) {
         if (sr.hasUserOverride) prev = sr.userOverride;
         else prev = CheapPreview(sr.raw);
         if (prev.size() > 220) prev.resize(220);
-        for (auto& ch : prev) if (ch == '
-' || ch == '
-' || ch == '	') ch = ' ';
+        for (auto& ch : prev) if (ch == '\r' || ch == '\n' || ch == '\t') ch = ' ';
         std::wstring prevW = winutil::WidenUtf8(prev);
 
         LVITEMW item{};
@@ -610,7 +608,7 @@ static std::wstring TrimOneLineW(std::wstring s, size_t maxChars) {
     while (!s.empty() && s.back() == L' ') s.pop_back();
     if (s.size() > maxChars) {
         s.resize(maxChars);
-        if (!s.empty()) s.back() = L'…';
+        if (!s.empty()) s.back() = (wchar_t)0x2026; // ellipsis
     }
     return s;
 }
@@ -2327,7 +2325,7 @@ void MainWindow::PopulateQuestText(size_t questIdx)
         while (!s.empty() && s.back() == L' ') s.pop_back();
         if (s.size() > maxChars) {
             s.resize(maxChars);
-            if (!s.empty()) s.back() = L'…';
+            if (!s.empty()) s.back() = (wchar_t)0x2026; // ellipsis
         }
         return s;
     };
