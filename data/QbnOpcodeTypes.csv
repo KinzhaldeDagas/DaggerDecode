@@ -1,0 +1,70 @@
+opcode_hex,opcode_dec,name,subrecords
+0x00,0,Item & Location,3
+0x01,1,Item & NPC,3
+0x02,2,Check Kill Count,3
+0x03,3,PC finds Item,2
+0x04,4,Items,5
+0x05,5,unknown,3
+0x06,6,States,1
+0x07,7,States,2 or 5
+0x08,8,Quest,3
+0x09,9,Repeating Spawn,5
+0x0A,10,Add Topics,4
+0x0B,11,Remove Topics,4
+0x0C,12,Start timer,2
+0x0D,13,Stop timer,2
+0x11,17,Locations,4
+0x13,19,Add Location to Map,2
+0x15,21,Mob hurt by PC,2
+0x16,22,Place Mob at Location,3
+0x17,23,Create Log Entry,3
+0x18,24,Remove Log,2
+0x1A,26,Give Item to NPC,3
+0x1B,27,Add Global Map,4
+0x1C,28,PC meets NPC,2
+0x1D,29,Yes/No Question,4
+0x1E,30,NPC; Location,3
+0x1F,31,Daily Clock,3
+0x22,34,Random State,5
+0x23,35,Cycle state,5
+0x24,36,Give Item to PC,2
+0x25,37,Item,4
+0x26,38,Rumors,2
+0x27,39,Item and Mob,3
+0x2B,43,PC at Location,3
+0x2C,44,Delete NPC,2
+0x2E,46,Hide NPC,2
+0x30,48,Show NPC,2
+0x31,49,Cure disease,2
+0x32,50,Play movie,2
+0x33,51,Display Message,1
+0x34,52,AND States,5
+0x35,53,OR States,5
+0x36,54,Make Item ordinary,2
+0x37,55,Escort NPC,2
+0x38,56,End Escort NPC,2
+0x39,57,Use Item,3
+0x3A,58,Cure Vampirism,1
+0x3B,59,Cure Lycanthropy,1
+0x3C,60,Play Sound,2
+0x3D,61,Reputation,3
+0x3E,62,Weather Override,3
+0x3F,63,Unknown,2
+0x40,64,Unknown,2
+0x41,65,Legal Reputation,2
+0x44,68,Mob,3
+0x45,69,Mob,3
+0x46,70,PC has Items,5
+0x47,71,Take PC Gold,4
+0x48,72,Unknown,2
+0x49,73,PC casts Spell,3
+0x4C,76,Give Item to PC,2
+0x4D,77,Check Player Level,2
+0x4E,78,Unknown,2
+0x51,81,Locations; NPC,3
+0x52,82,Stop NPC talk,3
+0x53,83,Location,4
+0x54,84,Play Sound,4
+0x55,85,Choose Questor,4
+0x56,86,End Questor,4
+0x57,87,Unknown,5

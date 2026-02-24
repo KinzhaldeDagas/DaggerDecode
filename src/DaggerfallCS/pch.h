@@ -1,0 +1,23 @@
+#pragma once
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <windowsx.h>
+#include <commctrl.h>
+#include <shlwapi.h>
+#include <shellapi.h>
+#include <string>
+#include <string_view>
+#include <vector>
+#include <array>
+#include <unordered_map>
+#include <algorithm>
+#include <optional>
+#include <filesystem>
+#include <fstream>
+#include <cstdio>
+#include <cstdint>
+#include <cwctype>
+#include <thread>
+#include <atomic>

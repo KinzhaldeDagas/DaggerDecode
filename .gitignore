@@ -1,0 +1,27 @@
+﻿# Visual Studio
+.vs/
+*.suo
+*.user
+*.VC.db
+*.opendb
+*.ipch
+
+# Build outputs
+bin/
+obj/
+x64/
+Debug/
+Release/
+
+# MSVC intermediate/debug artifacts
+*.pdb
+*.ilk
+*.idb
+*.tlog
+*.lastbuildstate
+*.recipe
+*.log
+*.pch
+
+# Optional generated file lists
+*.FileListAbsolute.txt

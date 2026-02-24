@@ -1,0 +1,854 @@
+
+  Daggerfall Mod:TEXT.RSC indices
+
+The UESPWiki – Your source for The Elder Scrolls, in memory of Julian LeFay
+< Mod <https://en.uesp.net/wiki/Mod:Main_Page> / Daggerfall <https://
+en.uesp.net/wiki/Daggerfall:Daggerfall>: Daggerfall Mod <https://
+en.uesp.net/wiki/Daggerfall_Mod:Main_Page>: File Formats <https://
+en.uesp.net/wiki/Daggerfall_Mod:File_Formats>: Text Record Format
+<https://en.uesp.net/wiki/Daggerfall_Mod:Text_Record_Format>: TEXT.RSC
+format <https://en.uesp.net/wiki/Daggerfall_Mod:TEXT.RSC_format>
+⧼monobook-jumptonavigation⧽ <#column-one>⧼monobook-jumptosearch⧽
+<#searchInput>
+
+
+    Daggerfall TEXT.RSC Index[edit <https://en.uesp.net/w/index.php?
+    title=Daggerfall_Mod:TEXT.RSC_indices&action=edit&section=1>]
+
+*v1.6 10 March 2004* Created By Brendan
+
+This an index of the entries in the TEXT.RSC file found in the ARENA2
+directory of "The Elder Scrolls II: Daggerfall". Each index has a four
+digit number from 0000 to 9999. Many index numbers are not used. The
+used indexes are listed in ascending numerical order as spans {####-
+####} or single entries followed by descriptions {#### = 'foo'},
+sometimes with additional single entries or spans appended after a comma
+{,}. Descriptions in the form ' #### = "foo" ' have the literal contents
+of the entry within the double quotes {""}; in this case the entry would
+be: foo. Descriptions may also take the form of headers followed on the
+next line by the indexes they pertain to. Additional comments are
+contained in parenthesis {('foo')}.
+
+The information here is 99% complete and fairly accurate. On
+completeness, the entire file has been explored and documented, but
+changes between patched versions are not well researched beyond
+differences between the original and the last 2.13 patched version. For
+accuracy, a number of the entries are not used in the game, some have
+identical index numbers, the text of some entries are identical and it
+has not been thoroughly tested which index number is the one used, and
+certain error messages encountered in the game regarding "bad text" or
+missing entries all introduce a few unknowns. Attempts have also been
+made to chart the useage of entries for character biographies, but this
+has been left incomplete. Also worth noting is that there are a number
+of entries discovered in the TEXT.RSC file included with the 'Betony
+Demo' of Daggerfall that have not been included here. Neither have the
+'Privateer's Hold Demo' entries been included.
+
+
+Attribute descriptions
+0000-0007
+
+0008 = Buy training dialogue
+0010 = Regional location dialogue
+0011 = 'don't know' dialogue
+0012 = no spells message
+0013 = 'no place by that name' map message
+0014 = Bonus points to distribute message
+0015 = surrender to guards y/n message
+0016 = 'Too many days' room rental dialogue
+0017 = 'vagrancy illegal' message
+0018 = good health message
+0019 = no affiliations message
+0020 = 'Azura's Star empty' message
+0021 = "You cannot train a skill that above 50%."(sic)
+0022 = Info message (Place, time, date, region, legal reputation)
+0023 = '12 hour wait' training message
+0024 = "This does not need to be repaired."
+0025 = drop gold pieces message
+
+Rest and loiter time limit messages
+0026,0027
+
+0028 = "%hnt"
+0029 = broken item message
+0030 = "You have no diseases."
+0031 = fast travel confirm message
+0032 = Azura's Star 'soul released' message
+0033 = can't repair magic items dialogue
+0034 = "You don't have any potion ingredients."
+0035 = Reputation change message
+0036 = Vampire 'feed before resting' message
+0037 = Private Propery message
+0038 = Access wagon from dungeon message
+
+Contracted disease descriptions
+0100-0116
+
+0117 = "You have been poisoned."(added in patches)
+
+0200 = racial jokes
+
+Oaths/Swears from the 8 playable races (seemingly)
+0201-0208
+
+0250 = VOID
+
+0255 = "From where dost thou hail?"
+
+0256 = Residence entering messages
+
+Merchant dialogue
+0260-0265
+0262 = Dialogue used in tavern room renting
+
+Shop description messages
+0266-0270
+
+Banking dialogue
+0282-299
+
+Custom Character creation messages
+0300-0307
+
+Rest command messages
+0349-0355
+
+0360 = Banking dialogue, bank warned of PC loan default(not in original)
+
+Demo version messages(not in original)
+0361-0364,400
+
+0401 = Vampirism undeath message(not in original)
+0402 = Spymaster's introduction dialogue
+0403 = "Do you want to reset your character's attributes back to their original values?"(not in original)
+0454 = not enough gold message
+
+Knightly rewards
+0460-0463
+
+0465 = Sorceror recharging (at Mages Guild)
+
+Castle Daggerfall, Wayrest, Sentinel
+0475-0477
+
+Daedra summoning dialogues
+0480-0484
+
+0499 = 'pick up map' messages
+
+Dungeon overland area entered messages
+0500-0518,0520-0538
+
+Thieves' Guild, Dark Brotherhood Judge-bribeing messages
+0550,0051
+
+0600 = null quest offering dialogue
+0606 = Mages' Guild 'worthy to join' dialogue
+0611 = Mages' Guild 'ineligible to join' dialogue
+0612 = scholarly guild 'ineligible to join' dialogue
+0666 = Dark Brotherhood promotion dialogue
+0667 = demotion messages (guild unknown yet)
+0668 = expulsion messages
+
+Fighters' Guild acceptance/rejection messages
+0679-0681
+  0684 = Fighters' Guild response to joining
+  0686 = Fighters' Guild promotion
+
+Temple Donation messages
+0702,0703
+
+0705 = Zen's blessing
+0707 = Mara's blessing
+0709 = Akatosh's blessing
+0710 = Julianos's blessing
+0712 = Dibella's blessing
+0716 = Stendarr's blessing
+0717 = Kynareth's blessing
+
+0740 = Temple eligibility dialogue
+0744 = Temple ineligibility
+
+0745 = Order ineligibility
+
+Fighter or knight ineligibility
+0750,0751
+
+0752 = Knightly order acceptance
+
+Poetic preambles
+0850-0855
+
+Guild/Organization info dialogues
+0860-0894
+
+Poetry phrases by rhyme (somewhat mixed)
+0900-0921
+
+Item info (type, material, condition, worth, etc.)
+1000-1014
+1015 = Oghma Infinium info
+1016 = "Item powers:"
+
+1068 = Class prohibts equip message
+1069 = Game exit confirm message
+
+1071,1072 = Exhaustion messages
+
+1073 = House deed message
+
+1200,1201,1203 = VOID
+
+Spell effect descriptions for spellbook, interrupted
+1202,1204-1207,1209-1289
+ 1290-1292 = VOID
+cont.'d 1293-1311
+ Spell effects not used in game
+  1279 = Morph Self (removed in patches, never truly implemented)
+  1280,1281
+  1284 = Dimunition (removed in patches, never truly implemented)
+  1294,1295,1300,1301,1304,1306-1311
+
+1350 = Advantage/Disadvantage conflict message
+
+Skill Descriptions
+1360-1396
+  Skills never implemented = 1370,1373,1375
+
+Rumor dialogue, politics and war
+1400-1409
+
+Rumor dialogue, misc
+1410-1418
+
+Rumor dialogue, occult & artifacts
+1450-1453
+
+Rumor dialogue, underworld
+1454,1455
+
+1456 = Rumor dialogue, misc
+1457 = MOST USED 'out of info' DIALOGUE
+
+Town bulletin messages, part I
+1475-1479
+
+1480 = Rumor dialogue, change of leader
+1481 = Formal relations dialogue?
+
+Town bulletin messages, part II
+1482,1483
+
+1500,1501 = VOID
+
+Spell effect descriptions for spellmaker
+1502,1504-1507,1509-1589
+ 1590-1592 = VOID
+cont.'d 1593-1611
+ Spell effects not used in game
+  1579 = Morph Self (removed in patches, never truly implemented)
+  1580,1581
+  1584 = Dimunition (removed in patches, never truly implemented)
+  1594,1595,1600,1601,1604,1606-1611
+
+Magic Item Creation/Enchanting messages
+1650-1660
+
+1700 = "This page is full. Start a new scroll."(don't know useage)
+1701 = "The word you seek does not appear in your notes."(not used in game?)
+
+Spellmaker messages
+1702-1709
+
+Spellmaker button descriptions
+1800-1814
+
+1850 = "You do not have enough magicka"
+
+Playable Race descriptions
+2000-2007
+
+Guilds' description of self dialogue, join y/n question
+2050-2077
+
+Class descriptions (last 2 digits match classXX.cfg numbers)
+2100-2117
+
+2200 = gender selection message
+
+Help messages
+2400-2407
+
+2500 = "%qdt - %pnq in %plq told me "%qot""
+
+3100 = 'Services reserved for rank' dialogue
+
+3353 = "Oh Shit!!!" (not used in game?)
+
+Daedra Summoning dialogue
+3503,3504,3506-3509
+
+4000,4001 = Teleportation messages
+
+4020,4021 = Master of Skill message
+
+4022 = 'too high to train' dialogue
+4023 = 'wait for training' dialogue
+
+4050 = Temple/shrine sites names
+
+Dungeon name templates, %ln
+4051-4054
+
+Temple building names
+4055-4062
+
+4063 = Dungeon name templates, %ln(not in original)
+
+4075,4076 = Temple site adjective preambles
+
+Gods' names
+4077-4084
+
+Biography templates (in order of class list)
+4116-4133
+
+4134 = Biography for characters imported from TES I: Arena (not used; no import feature)
+
+Biography add-ins from different answers to questions
+  4150-4183 = phrases
+  4190-4196 = items(second modifying question?)
+  4200-4205 = weapons expertise
+  4206-4211 = magicka expertise
+  4212-4215 = "personal hatred"?
+  4216-4266,4300-4311,4400-4459,4500-4539,4550-4570,4650-4657,4700-4706
+  not used:
+  4194
+
+Misc. phrases, adjectives, words(not evaluated yet)
+4707-4714,4750-4754
+
+Non-standard god names
+4755-4761
+
+4762,4763 = biog add-ins not used(Wild Elves,Faerie)
+
+Biography add-ins; biog14, language
+4764-4771
+
+4773 = biog14 option, "bow"
+
+Biography add-ins, biog12,16,&17
+4773,4900-4905
+
+Tavern room renting dialogue
+5100-5102
+
+5221 = post-training message
+
+Thieves' Guild promotion and dungeom map giving messages
+5225-5229
+
+Mages' Guild promotion messages
+5230-5234
+
+5235 = Thieves' Guild promotion (to Filcher?)
+
+5236 = Mages' Guild prmotion dialogue
+
+5237 = Knightly Order promotion dialogue(not in original)
+
+Knightly Order promotion dialogues
+5238-5241
+
+Temple promotion dialogues
+5242-5249
+
+Temple joining dialogues
+5287-5290
+
+5291 = Join knightly order dialogue
+
+5292 = Join Dark Brotherhood dialogue
+
+5293 = Join Mages Guild dialogue
+
+5400 = "Action type twelve. (do not translate)~"
+
+Guardian and Riddle Door dialogues
+5404,5406,5423,5424
+
+5464 = Castle Daggerfall guard dialogue
+
+5656 = "Answers start here. (do not translate)~"
+
+Answers to riddle dialogues
+5660,5662,5679,5680,5720
+
+Geography, Animal, Plant nouns(possibly used with paintings)
+6100-6113
+
+Town landform nouns(possibly used with paintings)
+6114-6116
+
+6117 = "Nude"(possibly used with paintings)
+
+6118,6119 = woman and man titles,nouns(possibly used with paintings)
+
+6120,6121 = settlement building nouns(possibly used with paintings)
+
+Adjectives, colors(possibly used with paintings)
+6201-6215
+
+prepositional phrases(possibly used with paintings)
+6301-6310,6401-6412
+
+Temple promotion messages
+6600-6609
+
+6610 = Temple join message
+
+Dark Brotherhood promotion messages
+6611-6614
+
+Prostitute dialogue messages(not used in game?)
+7200-7203
+
+7204 = "You cannot talk to that.~"(not used in game?)
+7205 = 'no response' message
+
+Greeting dialogues
+7206-7209
+
+7210 = "Comment already copied to notebook.~"(not used in game?)
+
+PC inquiry dialogues
+7211-7214
+
+PC greeting/preamble dialogues
+7215-7220
+
+"Buddy" dialogue names
+7221-7222
+
+'Where is' PC dialogues
+7225-7227
+
+PC informing NPC dialogues(not used in game)
+7228-7230
+
+'Any news?' PC dialogues
+7231-7233
+
+7234 = Sexual proposition dialogues(not used in game?)
+7235 = 'PC rejected sex' dialogues
+
+NPC 'don't know' and dislikes PC
+7250-7264
+
+NPC 'don't know', ambivalent to PC
+7265-7269
+ 7267 = the famed "hold my foot while I have a drink of air" scholarly babbling.
+
+NPC knows and tells PC
+7270-7279
+
+NPC regretfully doesn't know
+7280-7284
+
+NPC knows and happily tells PC
+7285-7289
+
+NPC knows and tells PC in confidence
+7290-7294
+
+7332 = location marked on your map dialogue
+7333 = directional indication dialogue
+
+7700 = Start inserting action type 99 here... (do not translate)~"
+
+Bored guard, don't pass door message
+7701-7705
+
+Special door info messages
+7717,7764-7770
+
+Courtroom dialogues/messages
+8050,8052,8053,8055,8057,8058,8060,8062-8064
+
+Work inquiry response dialogues
+8076-8078
+
+Dungeon template names
+8200-8215
+  8100 = '%n' Dungeon name templates
+  8200,8208 = '%vn' Dungeon name templates
+  8201 = "%on"
+  8202,8203,8205 = %mn Dungeon name templates
+
+Holiday messages
+8350-8403
+
+NPC 'Holiday' dialogue
+8525-8540
+
+Inter-guild politics based help/no help dialogues
+8550-8569
+
+8570 = "Well met, stranger."
+8571 = distainful response to dialogue initiation
+
+8600 = "Insert action type 11 here... (do not translate)~"
+
+Some kind of God dialogues
+8604,8605,8609
+
+8616,8617 = Sentinel palace guard messages
+
+Game Hint!s (probably from tutorial)
+8690-8693
+
+Artifact info messages
+8700-8722
+
+8999 = Pickpocketing 'nothing of value' messages
+
+9000 = Character class 'select by answering question' messages
+
+9400 = "Reserved to 9912 for Bruce and Co. (do not translate)~"
+
+9999 = "Dummy entry. Must always ~"
+-0001 = VOID
+
+
+LIST OF USED INDEXES
+
+"####-####" is a continuous, incremental span of used index numbers
+including the starting and ending numbers. "####" is a lone entry that
+is used but is not part of a span, i.e. neither the index number one
+less nor one greater was used. " = 'foo'" appended to any index
+number(s) are special cases where 'foo' is a description of a lone entry
+or a span worth noting ("foo" does not appear literally). " = VOID"
+means that the index number is used but contains no information. ",####"
+appended to any index number(s) are lone entries that are part of a set
+whose content belongs together, all of which will be followed by a
+description. These may take the form of an addendum indented below a
+span of used indexes they fall within.
+
+0000-0008
+0010-0038
+0100-0117
+0200-0208
+0250 = VOID
+0255-0256
+0260-0270
+0282-0307
+0349-0355
+0360
+0361-0364,0400 = Demo version messages (not in original)
+0401-0403
+0454
+0460-0463
+0465
+0475-0477
+0480-0484
+0499-0518
+0520-0538
+0550-0051
+0600
+0606
+0611-0612
+0666-0668
+0679-0681
+0684
+0686
+0702-0703
+0705
+0707
+0709-0710
+0712
+0716-0717
+0740
+0744-0745
+0750-0752
+0850-0855
+0860-0894
+0900-0921
+1000-1016
+1068-1069
+1071-1073
+1200-1201 = VOID
+1203 = VOID
+1202
+1204-1207
+1209-1289
+
+1279-1281,1284 = Spell effects not used in game
+
+1290-1292 = VOID
+1293-1311
+  1294-1295,1300-1301,1304,1306-1311 = Spell effects not used in game
+
+1350
+1360-1396
+  1370,1373,1375 = Skills never implemented
+1400-1418
+1450-1457
+1475-1483
+1500-1501 = VOID
+
+1502
+1504-1507
+1509-1589
+1590-1592 = VOID
+1593-1611
+
+1579-1581,1584,1594-1595,1600-1601,1604,1606-1611 = Spell effects not used in game
+
+
+1650-1660
+1700-1709
+1800-1814
+1850
+2000-2007
+2050-2077
+2100-2117
+2200
+2400-2407
+2500
+3100
+3353
+3503-3504
+3506-3509
+4000-4001
+4020-4023
+4050-4063
+4075-4084
+4116-4134
+4150-4183
+4190-4196
+4200-4266
+4300-4311
+4400-4459
+4500-4539
+4550-4570
+4650-4657
+4700-4714
+4750-4771
+4773
+4900-4905
+5100-5102
+5221
+5225-5249
+5287-5293
+5400 = "Action type twelve. (do not translate)~"
+5404
+5406
+5423-5424
+5464
+5656 = "Answers start here. (do not translate)~"
+5660
+5602
+5679
+5720
+6100-6121
+6201-6215
+6301-6310
+6401-6412
+6600-6614
+7200-7223
+7225-723
+7250-7294
+7332-7333
+7700 = "Start inserting action type 99 here... (do not translate)~"
+7701-7705
+7717
+7764-7770
+8050
+8052-8053
+8055
+8057-8058
+8060
+8062-8064
+8076-8078
+8200-8215
+8350-8403
+8525-8540
+8550-8571
+8600 = "Insert action type 11 here... (do not translate)~"
+8604-8605
+8609
+8616-8617
+8690-8693
+8700-8722
+8999
+9000
+9400 = "Reserved to 9912 for Bruce and Co. (do not translate)~"
+9999 = "Dummy entry. Must always ~"
+-0001 = VOID
+
+Retrieved from "https://en.uesp.net/w/index.php?
+title=Daggerfall_Mod:TEXT.RSC_indices&oldid=2214219 <https://
+en.uesp.net/w/index.php?
+title=Daggerfall_Mod:TEXT.RSC_indices&oldid=2214219>"
+Category <https://en.uesp.net/wiki/Special:Categories>:
+
+  * Daggerfall Mod-File Formats-Text Record Format-TEXT.RSC format
+    <https://en.uesp.net/w/index.php?title=Category:Daggerfall_Mod-
+    File_Formats-Text_Record_Format-TEXT.RSC_format&action=edit&redlink=1>
+
+
+    Navigation menu
+
+
+monobook-cactions-label
+
+  * Daggerfall Mod <https://en.uesp.net/wiki/
+    Daggerfall_Mod:TEXT.RSC_indices>
+  * Discussion <https://en.uesp.net/w/index.php?
+    title=Daggerfall_Mod_talk:TEXT.RSC_indices&action=edit&redlink=1>
+  * Edit <https://en.uesp.net/w/index.php?
+    title=Daggerfall_Mod:TEXT.RSC_indices&action=edit>
+  * History <https://en.uesp.net/w/index.php?
+    title=Daggerfall_Mod:TEXT.RSC_indices&action=history>
+  * Chat <https://en.uesp.net/wiki/UESPWiki:Discord>
+
+
+monobook-cactions-label
+
+  * Daggerfall Mod <https://en.uesp.net/wiki/
+    Daggerfall_Mod:TEXT.RSC_indices>
+  * Discussion <https://en.uesp.net/w/index.php?
+    title=Daggerfall_Mod_talk:TEXT.RSC_indices&action=edit&redlink=1>
+  * ⧼monobook-more-actions⧽ <#p-cactions>
+  * Tools <#p-tb>
+
+
+Personal tools
+
+  * Not logged in
+  * Talk <https://en.uesp.net/wiki/Special:MyTalk>
+  * Contributions <https://en.uesp.net/wiki/Special:MyContributions>
+  * Create account <https://en.uesp.net/w/index.php?
+    title=Special:CreateAccount&returnto=Daggerfall+Mod%3ATEXT.RSC+indices>
+  * Log in <https://en.uesp.net/w/index.php?
+    title=Special:UserLogin&returnto=Daggerfall+Mod%3ATEXT.RSC+indices>
+
+<https://en.uesp.net/wiki/Main_Page>
+
+
+Search
+
+Search
+
+
+general
+
+  * Help <https://en.uesp.net/wiki/Help:Contents>
+  * How to Contribute <https://en.uesp.net/wiki/UESPWiki:Getting_Started>
+  * Recent Changes <https://en.uesp.net/wiki/Special:RecentChanges>
+  * Random Page <https://en.uesp.net/wiki/Special:Random>
+  * View Mobile Site <https://m.uesp.net/wikiredirect.php>
+  * Android App <https://uesp.app/>
+
+
+Content
+
+  * All Content <https://en.uesp.net/wiki/All_Content>
+  * Lore <https://en.uesp.net/wiki/Lore:Main_Page>
+  * General <https://en.uesp.net/wiki/General:Main_Page>
+  * Books <https://en.uesp.net/wiki/Books:Books>
+  * Merchandise <https://en.uesp.net/wiki/Merchandise:Main_Page>
+  * Mods <https://en.uesp.net/wiki/Mod:Main_Page>
+  * Elder Scrolls Online <https://en.uesp.net/wiki/Online:Online>
+  * Skyrim <https://en.uesp.net/wiki/Skyrim:Skyrim>
+  * Oblivion <https://en.uesp.net/wiki/Oblivion:Oblivion>
+  * Oblivion Remastered <https://en.uesp.net/wiki/
+    Oblivion:Oblivion_Remastered>
+  * Morrowind <https://en.uesp.net/wiki/Morrowind:Morrowind>
+  * Daggerfall <https://en.uesp.net/wiki/Daggerfall:Daggerfall>
+  * Arena <https://en.uesp.net/wiki/Arena:Arena>
+  * Castles <https://en.uesp.net/wiki/Castles:Castles>
+  * Blades <https://en.uesp.net/wiki/Blades:Blades>
+  * Legends <https://en.uesp.net/wiki/Legends:Legends>
+  * Travels <https://en.uesp.net/wiki/TES_Travels>
+  * Redguard <https://en.uesp.net/wiki/Redguard:Redguard>
+  * Battlespire <https://en.uesp.net/wiki/Battlespire:Battlespire>
+  * Betrayal of the 2nd Era <https://en.uesp.net/wiki/
+    Betrayal:Betrayal_of_the_Second_Era>
+  * Skyrim Adventure Game <https://en.uesp.net/wiki/SkyrimTAG:Skyrim_-
+    _The_Adventure_Game>
+  * Call to Arms <https://en.uesp.net/wiki/Call_to_Arms:Call_to_Arms>
+  * Skyrim Very Special <https://en.uesp.net/wiki/
+    SkyrimVSE:Skyrim_Very_Special_Edition>
+  * Skyrim Pinball <https://en.uesp.net/wiki/Pinball:Skyrim_Pinball>
+  * Featured Content <https://en.uesp.net/wiki/UESPWiki:Featured_Articles>
+
+
+Community
+
+  * Community Portal <https://en.uesp.net/wiki/UESPWiki:Community_Portal>
+  * Admin Noticeboard <https://en.uesp.net/wiki/
+    UESPWiki:Administrator_Noticeboard>
+  * Bluesky <https://bsky.app/profile/uesp.net>
+  * Discord <https://en.uesp.net/wiki/UESPWiki:Discord>
+      o Join Server <https://discord.gg/uesp>
+  * Facebook <https://www.facebook.com/UESP.net/>
+  * Instagram <https://www.instagram.com/unofficial_elder_scrolls_pages/>
+  * Mastodon <https://mstdn.ca/@uesp>
+  * Threads <https://www.threads.net/@unofficial_elder_scrolls_pages>
+  * Tumblr <https://uesp.tumblr.com/>
+  * Twitch <https://www.twitch.tv/uesp>
+  * X (Twitter) <https://twitter.com/UESP_net>
+  * YouTube <https://www.youtube.com/@UnofficialElderScrollsPages>
+  * Blog <https://blog.uesp.net/>
+  * Forums <https://forums.uesp.net/>
+  * Patreon <https://www.patreon.com/uesp>
+  * Hosted Wikis <https://en.uesp.net/wiki/UESPWiki:Hosted_Wikis>
+      o Starfield Wiki <https://starfieldwiki.net/>
+      o Oblivion CS Wiki <https://cs.uesp.net/>
+      o Skyrim CK Wiki <https://ck.uesp.net/wiki/Main_Page>
+      o Fallout 3 GECK Wiki <https://geck.uesp.net/>
+      o Fallout 4 CK Wiki <https://falloutck.uesp.net/>
+  * Affiliates <https://en.uesp.net/wiki/UESPWiki:Affiliates>
+  * Contact Us <https://en.uesp.net/wiki/UESPWiki:Contact>
+  * Links <https://en.uesp.net/wiki/General:Links>
+
+
+Tools
+
+  * What Links Here <https://en.uesp.net/wiki/Special:WhatLinksHere/
+    Daggerfall_Mod:TEXT.RSC_indices>
+  * Related changes <https://en.uesp.net/wiki/
+    Special:RecentChangesLinked/Daggerfall_Mod:TEXT.RSC_indices>
+  * Special Pages <https://en.uesp.net/wiki/Special:SpecialPages>
+  * Printable Version <https://en.uesp.net/w/index.php?
+    title=Daggerfall_Mod:TEXT.RSC_indices&printable=yes>
+  * Permanent Link <https://en.uesp.net/w/index.php?
+    title=Daggerfall_Mod:TEXT.RSC_indices&oldid=2214219>
+  * Page information <https://en.uesp.net/w/index.php?
+    title=Daggerfall_Mod:TEXT.RSC_indices&action=info>
+  * Cite this page <https://en.uesp.net/w/index.php?
+    title=Special:CiteThisPage&page=Daggerfall_Mod%3ATEXT.RSC_indices&id=2214219>
+
+<#sidebar><#p-personal><#globalWrapper>
+[Content is available under Attribution-ShareAlike] <https://
+en.uesp.net/wiki/UESPWiki:Copyright_and_Ownership>
+Powered by MediaWiki <https://www.mediawiki.org/>[Proudly Hosted by
+Twelve Worlds] <https://twelveworlds.net/>
+
+  * This page was last edited on 21 September 2020, at 23:15.
+  *
+
+    All content is available under the terms of the Attribution-
+    ShareAlike 2.5 License <https://en.uesp.net/wiki/
+    UESPWiki:Copyright_and_Ownership>.
+
+  * Privacy Policy <https://en.uesp.net/wiki/UESPWiki:Privacy_Policy>
+  * About UESPWiki <https://en.uesp.net/wiki/UESPWiki:About>
+  * Disclaimers <https://en.uesp.net/wiki/UESPWiki:General_Disclaimer>
+  * Mobile view <https://en.uesp.net/w/index.php?
+    title=Daggerfall_Mod:TEXT.RSC_indices&mobileaction=toggle_view_mobile>
+  * Enable previews <#>
+
+<#>

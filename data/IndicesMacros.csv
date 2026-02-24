@@ -1,0 +1,217 @@
+macro,handler,macro_type,implemented,comment
+%1am,MagnitudePlusMin,singleline,yes,1st + Magnitude
+%1bm,MagnitudeBaseMin,singleline,yes,1st base Magnitude
+%1com,GreetingOrFollowUpText,singleline,yes,Greeting (?)
+%1hn,null,singleline,no,?
+%2am,MagnitudePlusMax,singleline,yes,2nd + Magnitude
+%2bm,MagnitudeBaseMax,singleline,yes,2nd Base Magnitude
+%2hn,null,singleline,no,?
+%3hn,null,singleline,no,?
+%G,PronounCap,singleline,yes,"He/She, first letter capitalized"
+%G1,PronounCap,singleline,yes,"He/She, first letter capitalized"
+%G2,Pronoun2Cap,singleline,yes,"Him/Her, first letter capitalized"
+%G2self,Pronoun2selfCap,singleline,yes,"Himself/Herself, first letter capitalized"
+%G3,Pronoun3Cap,singleline,yes,"His/Her, first letter capitalized"
+%G4,Pronoun4Cap,singleline,yes,"His/Hers, first letter capitalized"
+%a,Amount,singleline,yes,Cost of somthing.
+%ach,ChancePlus,singleline,yes,+ Chance plus
+%adj,PaintingAdjective,singleline,yes,Painting adjective
+%adr,DurationPlus,singleline,yes,+ Duration plus
+%agi,Agi,singleline,yes,Amount of Agility
+%an,ArtistName,singleline,yes,Artist name (of a painting)
+%ark,AttributeRating,singleline,yes,What property attribute is considered
+%arm,ItemName,singleline,yes,Armour
+%ba,BookAuthor,singleline,yes,Book Author
+%bch,ChanceBase,singleline,yes,Base chance
+%bdr,DurationBase,singleline,yes,Base Duration
+%bn,Name,singleline,yes,Random name in biography text
+%bt,ItemName,singleline,yes,Book title
+%cbd,CurrentBuilding,singleline,yes,"Name of the current building, if any"
+%cbl,null,singleline,no,Cash balance in current region
+%clc,ChancePerLevel,singleline,yes,Per level (Chance)
+%cld,DurationPerLevel,singleline,yes,Per level (Duration)
+%clm,MagnitudePerLevel,singleline,yes,Per level (Magnitude)
+%cn,CityName,singleline,yes,City name
+%cn2,CityName2,singleline,yes,City name #2
+%cpn,ShopName,singleline,yes,Current shop name
+%cri,Crime,singleline,yes,Accused crime
+%crn,CurrentRegion,singleline,yes,Current Region
+%ct,CityType,singleline,yes,"City type? e.g city, town, village?"
+%dae,Daedra,singleline,yes,A daedra
+%dam,DmgMod,singleline,yes,Damage modifier
+%dat,Date,singleline,yes,Date
+%day,DayNum,singleline,yes,"Current day of the month (ex: 1, 2, ..., 30)"
+%dayn,DayName,singleline,yes,Name of the current day (ex: Morndas)
+%days,DayWithSuffix,singleline,yes,"Current day of the month with suffix (ex: 1st, 2nd, 3rd, ...)"
+%di,Direction,singleline,yes,Direction (depending on scope of last referenced place resource)
+%dip,DaysInPrison,singleline,yes,Days in prison
+%dng,Dungeon,singleline,yes,Dungeon
+%dts,null,singleline,no,Daedra
+%dwr,RoomHoursLeft,singleline,yes,Hours with room remaining.
+%ef,null,singleline,no,Local shop name
+%enc,EncumbranceMax,singleline,yes,Encumbrance
+%end,End,singleline,yes,Amount of Endurance
+%fa,FactionAlly,singleline,yes,faction which is both PC and NPC ally (used for greetings)
+%fae,FactionAllyEnemy,singleline,yes,faction which is PC ally and NPC enemy (used for greetings)
+%fcn,LocationOfRegionalBuilding,singleline,yes,Location with regional building asked about
+%fe,FactionEnemy,singleline,yes,faction which is both PC and NPC enemy (used for greetings)
+%fea,FactionEnemyAlly,singleline,yes,faction which is PC enemy and NPC ally (used for greetings)
+%fl1,LordOfFaction1,singleline,yes,Lord of _fx1
+%fl2,LordOfFaction2,singleline,yes,Lord of _fx2
+%fn,FemaleName,singleline,yes,Random female name
+%fn2,FemaleName,singleline,yes,"Random female name, differs from the previous in classic by using a different seed"
+%fnpc,FactionNPC,singleline,yes,faction of npc that is dialog partner
+%fon,FactionOrderName,singleline,yes,Faction order name
+%fpa,FactionName,singleline,yes,"faction name? of dialog partner - should return ""Kynareth"" for npc that are members of ""Temple of Kynareth"""
+%fpc,FactionPC,singleline,yes,PC faction used for guild related greetings
+%fx1,AFactionInNews,singleline,yes,A faction in news
+%fx2,AnotherFactionInNews,singleline,yes,Another faction in news
+%g,Pronoun,singleline,yes,He/She etc...
+%g1,Pronoun,singleline,yes,He/She ???
+%g2,Pronoun2,singleline,yes,Him/Her etc...
+%g2self,Pronoun2self,singleline,yes,Himself/Herself etc...
+%g3,Pronoun3,singleline,yes,His/Her
+%g4,Pronoun4,singleline,yes,His/Hers
+%gdd,GodDesc,singleline,yes,God description i.e. God of Logic
+%gii,GoldCarried,singleline,yes,Amount of gold in hand
+%god,God,singleline,yes,God of current region or current temple
+%gtp,GoldToPay,singleline,yes,Amount of fine
+%hea,HpMod,singleline,yes,HP Modifier
+%hmd,HealRateMod,singleline,yes,Healing rate modifer
+%hnr,Honorific,singleline,yes,"Honorific in guild/faction (note Nystul: vanilla resolved this for my male character to ""Sir"")"
+%hnt,DialogHint,singleline,yes,"context ""Tell Me About"": anyInfo message, context place: Direction of location. (comment Nystul: it is either a location direction hint or a map reveal)"
+%hnt2,DialogHint2,singleline,yes,"context ""Tell Me About"": rumors message"
+%hol,null,singleline,no,Holiday
+%hour,TimeHour,singleline,yes,Current hour
+%hpn,HomeProvinceName,singleline,yes,Home province name
+%hpw,GeographicalFeature,singleline,yes,Geographical feature of home province
+%hrg,null,singleline,no,House region
+%hrn,HomeRegion,singleline,yes,Home region (of person)
+%hs,HeldSoul,singleline,yes,Holding Soul type
+%htwn,null,singleline,no,House town
+%imp,ImperialName,singleline,yes,"Emperor's son's name, using a specific name bank"
+%int,Int,singleline,yes,Amount of Intelligence
+%it,ItemName,singleline,yes,Item
+%jok,Joke,singleline,yes,A joke
+%key,DialogKeySubject,singleline,yes,"A location (?) (comment Nystul: it is the topic you are asking about (e.g. building, work, etc.) how it seems)"
+%key2,null,singleline,no,Another location
+%kg,Weight,singleline,yes,Weight of items
+%kno,FactionOrderName,singleline,yes,A knightly guild name
+%lev,GuildTitle,singleline,yes,Rank in guild that you are in.
+%ln,LastName,singleline,yes,Random lastname
+%loc,MarkLocationOnMap,singleline,yes,"Location marked on map (comment Nystul: this seems to be context dependent - it is used both in direction dialogs (7333) and map reveal dialogs (7332) - it seems to return the name of the building and reveal the map only if a 7332 dialog was chosen"
+%lp,LocalProvince,singleline,yes,Local province
+%lt1,TitleOfLordOfFaction1,singleline,yes,Title of _fl1
+%ltn,LegalReputation,singleline,yes,In the eyes of the law you are.......
+%luc,Luck,singleline,yes,Luck
+%mad,MagicResist,singleline,yes,Resistance
+%map,LocationRevealedByMapItem,singleline,yes,Name of location revealed by a map item
+%mat,Material,singleline,yes,Material
+%min,TimeMin,singleline,yes,Current minute
+%mit,null,singleline,no,Item
+%ml,MaxLoan,singleline,yes,Max loan amount
+%mn,MaleName,singleline,yes,Random male name
+%mn2,MaleName,singleline,yes,"Random male name, differs from the previous in classic by using a different seed"
+%mod,ArmourMod,singleline,yes,Modification
+%mon,MonthNum,singleline,yes,Current month
+%monn,MonthName,singleline,yes,Name of the current month (ex: Hearthfire)
+%mpw,MagicPowers,multiline,yes,Magic powers - multi line (token) message
+%n,Name,singleline,yes,A random name (comment Nystul: I think it is just a random name - or maybe this is the reason that in vanilla all male mobile npcs have female names...)
+%nam,Name,singleline,yes,A random full name
+%nrn,LordOfCurrentRegion,singleline,yes,Noble of the current region (used in: O0B00Y01)
+%nt,NearbyTavern,singleline,yes,Nearby Tavern
+%ol1,OldLordOfFaction1,singleline,yes,Old lord of _fx1
+%olf,OldLeaderFate,singleline,yes,What happened to _ol1
+%on,null,singleline,no,?
+%oth,Oath,singleline,yes,An oath (listed in TEXT.RSC)
+%pcf,PlayerFirstname,singleline,yes,Character's first name
+%pcl,PlayerLastname,singleline,yes,Character's last name
+%pcn,PlayerName,singleline,yes,Character's full name
+%pct,GuildTitle,singleline,yes,Player guild title/rank
+%pdg,null,singleline,no,Days in jail
+%pen,Penalty,singleline,yes,Crime penalty
+%per,Per,singleline,yes,Amount of Personality
+%pg,PlayerPronoun,singleline,yes,He/She (player)
+%pg1,PlayerPronoun,singleline,yes,He/She (player)
+%pg2,PlayerPronoun2,singleline,yes,Him/Her (player)
+%pg2self,PlayerPronoun2self,singleline,yes,Himself/Herself (player)
+%pg3,PlayerPronoun3,singleline,yes,His/Her (player)
+%pg4,PlayerPronoun4,singleline,yes,His/Hers (player)
+%plq,null,singleline,no,Place of something in log.
+%pnq,null,singleline,no,Person of something in log
+%po,Potion,singleline,yes,Potion
+%pp1,PaintingPrefix1,singleline,yes,?
+%pp2,PaintingPrefix2,singleline,yes,?
+%pqn,PotentialQuestorName,singleline,yes,Potential Quest Giver
+%pqp,PotentialQuestorLocation,singleline,yes,Potential Quest Giver's Location
+%ptm,null,singleline,no,An enemy of the current region (?)
+%q1,Q1,singleline,yes,q1 to q12 Effects of questions answered in bio.
+%q10,Q10,singleline,yes,
+%q10a,Q10a,singleline,yes,
+%q10b,Q10b,singleline,yes,
+%q11,Q11,singleline,yes,
+%q11a,Q11a,singleline,yes,
+%q11b,Q11b,singleline,yes,
+%q12,Q12,singleline,yes,
+%q12a,Q12a,singleline,yes,
+%q12b,Q12b,singleline,yes,
+%q1a,Q1a,singleline,yes,secondary effects of questions answered in bio
+%q1b,Q1b,singleline,yes,tertiary effects of questions answered in bio
+%q2,Q2,singleline,yes,
+%q2a,Q2a,singleline,yes,
+%q2b,Q2b,singleline,yes,
+%q3,Q3,singleline,yes,
+%q3a,Q3a,singleline,yes,
+%q3b,Q3b,singleline,yes,
+%q4,Q4,singleline,yes,
+%q4a,Q4a,singleline,yes,
+%q4b,Q4b,singleline,yes,
+%q5,Q5,singleline,yes,
+%q5a,Q5a,singleline,yes,
+%q5b,Q5b,singleline,yes,
+%q6,Q6,singleline,yes,
+%q6a,Q6a,singleline,yes,
+%q6b,Q6b,singleline,yes,
+%q7,Q7,singleline,yes,
+%q7a,Q7a,singleline,yes,
+%q7b,Q7b,singleline,yes,
+%q8,Q8,singleline,yes,
+%q8a,Q8a,singleline,yes,
+%q8b,Q8b,singleline,yes,
+%q9,Q9,singleline,yes,
+%q9a,Q9a,singleline,yes,
+%q9b,Q9b,singleline,yes,
+%qdat,QuestDate,singleline,yes,Quest date of log entry [2]
+%qdt,QuestDate,singleline,yes,Quest date of log entry
+%qot,null,singleline,no,The log comment
+%qua,Condition,singleline,yes,Condition
+%r1,CommonersRep,singleline,yes,Commoners rep
+%r2,MerchantsRep,singleline,yes,Merchants rep
+%r3,ScholarsRep,singleline,yes,Scholers rep
+%r4,NobilityRep,singleline,yes,Nobilitys rep
+%r5,UnderworldRep,singleline,yes,Underworld rep
+%ra,PlayerRace,singleline,yes,Player's race
+%reg,RegionInContext,singleline,yes,Region in context
+%rn,RegentName,singleline,yes,Regent's Name
+%rt,RegentTitle,singleline,yes,Regent's Title
+%sea,CurrentSeason,singleline,yes,Current season
+%sign,CurrentSign,singleline,yes,"Current sign (ex: The Lady, The Tower, ...). Not TES2 lore, but it's a staple at this point"
+%ski,Skill,singleline,yes,Mastered skill name
+%spc,Magicka,singleline,yes,Current Spell Points
+%spd,Spd,singleline,yes,Speed
+%spt,MagickaMax,singleline,yes,Max spell points
+%str,Str,singleline,yes,Amount of strength
+%sub,PaintingSubject,singleline,yes,Painting subject
+%t,RegentTitle,singleline,yes,Regent's Title
+%tcn,null,singleline,no,Travel city name
+%thd,ToHitMod,singleline,yes,Combat odds
+%tim,Time,singleline,yes,Time
+%vam,VampireClan,singleline,yes,PC's vampire clan
+%vcn,VampireNpcClan,singleline,yes,Vampire's Clan
+%vn,null,singleline,no,?
+%wdm,WeaponDamage,singleline,yes,Weapon damage
+%wep,ItemName,singleline,yes,Weapon
+%wil,Wil,singleline,yes,?
+%wpn,null,singleline,no,Poison (?)
+%wth,Worth,singleline,yes,Worth
+%year,YearNum,singleline,yes,Current year

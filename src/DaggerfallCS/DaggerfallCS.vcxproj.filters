@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4B04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4C08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Source Files\arena2">
+      <UniqueIdentifier>{A3D3A0E2-6F40-4EF0-BE6F-78E165D8C1A1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\arena2">
+      <UniqueIdentifier>{8BB2CE9C-0A03-4B8B-A9CF-8B0C7C1D1A24}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\export">
+      <UniqueIdentifier>{C6B7D5D1-0E43-49E1-8A5B-0CE0B8C2F7E2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\export">
+      <UniqueIdentifier>{2F1AF5E0-AE8C-4AA2-B5B4-5B9E33C1A1D7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\util">
+      <UniqueIdentifier>{B977C2E0-0E19-4D2B-82C0-41B4C6A76572}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\util">
+      <UniqueIdentifier>{A97F11C8-2A7B-45C9-A8A4-00B1D60BE8C1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\ui">
+      <UniqueIdentifier>{2A88C3F0-3C77-4E02-9E1E-6B463ABCA7A0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\ui">
+      <UniqueIdentifier>{1E8EE1F4-6E5A-4B1B-9F04-AB8A1C5F2A68}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="pch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="arena2\TextRsc.cpp">
+      <Filter>Source Files\arena2</Filter>
+    </ClCompile>
+    <ClCompile Include="arena2\TextTokens.cpp">
+      <Filter>Source Files\arena2</Filter>
+    </ClCompile>
+    <ClCompile Include="arena2\TextRscIndex.cpp">
+      <Filter>Source Files\arena2</Filter>
+    </ClCompile>
+    <ClCompile Include="arena2\VarHashCatalog.cpp">
+      <Filter>Source Files\arena2</Filter>
+    </ClCompile>
+    <ClCompile Include="export\CsvWriter.cpp">
+      <Filter>Source Files\export</Filter>
+    </ClCompile>
+    <ClCompile Include="util\WinUtil.cpp">
+      <Filter>Source Files\util</Filter>
+    </ClCompile>
+    <ClCompile Include="ui\MainWindow.cpp">
+      <Filter>Source Files\ui</Filter>
+    </ClCompile>
+    <ClCompile Include="ui\Splitter.cpp">
+      <Filter>Source Files\ui</Filter>
+    </ClCompile>
+    <ClCompile Include="ui\IndicesPrefsWindow.cpp">
+      <Filter>Source Files\ui</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="pch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="arena2\TextRsc.h">
+      <Filter>Header Files\arena2</Filter>
+    </ClInclude>
+    <ClInclude Include="arena2\TextTokens.h">
+      <Filter>Header Files\arena2</Filter>
+    </ClInclude>
+    <ClInclude Include="arena2\TextRscIndex.h">
+      <Filter>Header Files\arena2</Filter>
+    </ClInclude>
+    <ClInclude Include="arena2\VarHashCatalog.h">
+      <Filter>Header Files\arena2</Filter>
+    </ClInclude>
+    <ClInclude Include="export\CsvWriter.h">
+      <Filter>Header Files\export</Filter>
+    </ClInclude>
+    <ClInclude Include="util\WinUtil.h">
+      <Filter>Header Files\util</Filter>
+    </ClInclude>
+    <ClInclude Include="ui\MainWindow.h">
+      <Filter>Header Files\ui</Filter>
+    </ClInclude>
+    <ClInclude Include="ui\Splitter.h">
+      <Filter>Header Files\ui</Filter>
+    </ClInclude>
+    <ClInclude Include="ui\IndicesPrefsWindow.h">
+      <Filter>Header Files\ui</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="DaggerfallCS.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+    <Manifest Include="app.manifest">
+      <Filter>Resource Files</Filter>
+    </Manifest>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\data\TEXT_RSC_indices.txt">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\data\TEXT_VARIABLE_HASHES.txt">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\data\IndicesMacros.csv">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClCompile Include="arena2\QuestQbn.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="arena2\QuestCatalog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="arena2\QuestQbn.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="arena2\QuestCatalog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
