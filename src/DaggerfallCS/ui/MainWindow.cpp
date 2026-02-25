@@ -527,7 +527,7 @@ void MainWindow::TreeBuildTick() {
             ins.item.mask = TVIF_TEXT | TVIF_PARAM;
             ins.item.pszText = const_cast<wchar_t*>(label.c_str());
             ins.item.lParam = (LPARAM)AddPayload(TreePayload::Kind::Quest, 0, qidx);
-            HTREEITEM hQuest = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&ins);
+            (void)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&ins);
         }
 
         m_questInsertPos = endQ;
@@ -704,6 +704,7 @@ void MainWindow::EndListPreviewEdit(bool commit) {
 }
 
 void MainWindow::CommitListPreviewEdit(int item, int subItem, const std::wstring& newText) {
+    (void)subItem;
     std::wstring cleaned = TrimOneLineW(newText, 4096);
 
     // Apply to model depending on view mode.
@@ -1795,8 +1796,6 @@ static bool IsConstSubRecord(const arena2::QbnSubRecord& s) {
 }
 
 static uint8_t SectionFromLocalPtr(uint32_t lp) { return (uint8_t)((lp >> 8) & 0xFFu); }
-static uint8_t RecordFromLocalPtr(uint32_t lp)  { return (uint8_t)(lp & 0xFFu); }
-
 static std::wstring FormatSubRefCompact(const arena2::QbnSubRecord& s) {
     std::wstring out;
 
@@ -1895,93 +1894,7 @@ static std::wstring FormatSubRefPretty(const arena2::QuestEntry& q, const arena2
 }
 
 
-static std::wstring FormatQbnSubRecord(const arena2::QbnSubRecord& s) {
-    // Human-first formatting; keep raw fields for troubleshooting at the tail.
-    std::wstring out = FormatSubRefCompact(s);
-    out += L"  sec=" + std::to_wstring((int)s.sectionId);
-    out += L" lp=" + HexU32(s.localPtr);
-    if (s.objectPtr) out += L" obj=" + HexU32(s.objectPtr);
-    return out;
-}
-
-static bool SubRecRefsState(const arena2::QbnSubRecord& s, int stateRecIndex) {
-    if (s.sectionId != 9) return false; // States section
-    int rec = SubRefIndexBest(s);
-    if (rec < 0) return false;
-    rec &= 0xFF;
-    if (rec == 0xFF) return false;
-    return rec == stateRecIndex;
-}
-
-static const wchar_t* QbnOpName(uint16_t op) {
-    switch (op) {
-        case 0x000C: return L"Start timer";
-        case 0x000D: return L"Stop timer";
-        case 0x0013: return L"Add Location to Map";
-        case 0x0015: return L"Mob hurt by PC";
-        case 0x0016: return L"Place Mob at Location";
-        case 0x0017: return L"Create Log Entry";
-        case 0x0018: return L"Remove Log";
-        case 0x001A: return L"Give Item to NPC";
-        case 0x001C: return L"PC meets NPC";
-        case 0x001D: return L"Yes/No Question";
-        case 0x001E: return L"NPC, Location";
-        case 0x001F: return L"Daily Clock";
-        case 0x0022: return L"Random State";
-        case 0x0023: return L"Cycle state";
-        case 0x0024: return L"Give Item to PC";
-        case 0x0025: return L"Item (NPC rep check)";
-        case 0x0026: return L"Rumors";
-        default:     return L"(OpCode)";
-    }
-}
-
 // Whether Sub-record 1 (State) is a CONDITION gate for this op-code (vs being a "state to set").
-static bool OpState1IsGate(uint16_t op) {
-    switch (op) {
-        case 0x000C: // Start timer: "if State TRUE start Timer"
-        case 0x000D: // Stop timer: "if State TRUE shutdown Timer"
-        case 0x0013: // Add location to map: "if State TRUE add Location"
-        case 0x0016: // Place mob at location: "if State TRUE place Monster"
-        case 0x0017: // Create log entry: "If State TRUE add Message as log entry"
-        case 0x0018: // Remove log: guarded, invertable
-        case 0x001A: // Give item to NPC: "if State TRUE then give Item"
-        case 0x001D: // Yes/No question: "if State TRUE display question"
-        case 0x001E: // NPC, Location: "if State TRUE then place NPC"
-        case 0x0022: // Random state: "if State TRUE set one State at Random"
-        case 0x0023: // Cycle state: "if State TRUE cycle among states"
-        case 0x0024: // Give item to PC: "if State TRUE give Item"
-        case 0x0025: // NPC reputation check: "if State TRUE then set State2 ..."
-        case 0x0026: // Rumors: "if State TRUE then add Message to rumors"
-            return true;
-        default:
-            return false;
-    }
-}
-
-static bool OpState1IsTarget(uint16_t op) {
-    switch (op) {
-        case 0x0015: // Mob hurt by PC: "Set State if Mob hurt by Player"
-        case 0x001C: // PC meets NPC: "Set State when PC meets NPC"
-        case 0x001F: // Daily clock: "set State when daily clock is between ..."
-            return true;
-        default:
-            return false;
-    }
-}
-
-static bool OpSetsOtherStates(uint16_t op) {
-    switch (op) {
-        case 0x001D: // Yes/No
-        case 0x0022: // Random
-        case 0x0023: // Cycle
-        case 0x0025: // NPC rep check sets State2
-            return true;
-        default:
-            return false;
-    }
-}
-
 
 
 void MainWindow::PopulateQuestStages(size_t questIdx)

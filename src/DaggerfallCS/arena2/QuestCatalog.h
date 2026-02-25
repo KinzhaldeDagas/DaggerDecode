@@ -45,7 +45,7 @@ struct QuestCatalog {
     std::vector<QuestEntry> quests;
 	const VarHashCatalog* hashes{ nullptr };
 
-    bool LoadFromArena2Root(const std::filesystem::path& folder, const VarHashCatalog* hashes, std::wstring* err);
+    bool LoadFromArena2Root(const std::filesystem::path& folder, const VarHashCatalog* varHashes, std::wstring* err);
     // Compatibility overloads: callers that don't have a hash catalog handy.
     bool LoadFromArena2Root(const std::filesystem::path& folder, std::wstring* err) {
         return LoadFromArena2Root(folder, nullptr, err);
