@@ -236,9 +236,9 @@ static void ParseFilenameMeta(QuestEntry& q) {
 
 }
 
-bool QuestCatalog::LoadFromArena2Root(const std::filesystem::path& folder, const VarHashCatalog* hashes, std::wstring* err) {
+bool QuestCatalog::LoadFromArena2Root(const std::filesystem::path& folder, const VarHashCatalog* varHashes, std::wstring* err) {
     quests.clear();
-	this->hashes = hashes;
+	this->hashes = varHashes;
 
     std::filesystem::path root = folder;
     std::filesystem::path arena2 = root / "ARENA2";
@@ -266,7 +266,7 @@ bool QuestCatalog::LoadFromArena2Root(const std::filesystem::path& folder, const
         ParseFilenameMeta(e);
 
         std::wstring perr;
-		e.qbnLoaded = e.qbn.LoadFromFile(e.qbnPath, hashes, &perr); // Non-fatal: allow listing even if parse fails
+		e.qbnLoaded = e.qbn.LoadFromFile(e.qbnPath, varHashes, &perr); // Non-fatal: allow listing even if parse fails
         quests.push_back(std::move(e));
     }
 
