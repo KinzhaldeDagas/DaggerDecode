@@ -98,6 +98,10 @@ private:
     std::vector<HTREEITEM> m_pendingTreeParents;
     size_t m_treeInsertPos{ 0 };
 
+    // Book support
+    std::unordered_set<uint16_t> m_bookRecordIds;
+    std::unordered_map<uint16_t, std::wstring> m_bookRecordTitles;
+
     std::vector<size_t> m_pendingQuestIdx;
     std::vector<HTREEITEM> m_pendingQuestParents;
     size_t m_questInsertPos{ 0 };

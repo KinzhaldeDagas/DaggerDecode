@@ -73,6 +73,104 @@ static std::wstring FormatRecLabel(uint16_t id) {
     return buf;
 }
 
+static bool IsBookLikeLabel(const std::wstring& label) {
+    std::wstring s = ToLowerCopy(label);
+    auto has = [&](const wchar_t* needle) { return s.find(needle) != std::wstring::npos; };
+    return has(L"book") || has(L"notebook") || has(L"journal") || has(L"diary") || has(L"spellbook") ||
+           has(L"guide") || has(L"chronicle") || has(L"history") || has(L"biography") || has(L"biograph");
+}
+
+static bool LooksLikeBookRecord(arena2::TextRecord& rec, const std::vector<uint8_t>& fileBytes, std::wstring_view label) {
+    rec.EnsureParsed(fileBytes);
+    if (rec.subrecords.empty()) return false;
+
+    int score = 0;
+    if (IsBookLikeLabel(std::wstring(label))) score += 2;
+
+    size_t plainBytes = 0;
+    for (auto& sr : rec.subrecords) {
+        auto& tok = sr.EnsureTokens();
+        plainBytes += tok.plain.size();
+        if (tok.hasEndOfPage) score += 3;
+        if (tok.hasFontScript) score += 2;
+        for (const auto& t : tok.tokens) {
+            if (t.type == arena2::TokenType::BookImage) {
+                score += 2;
+                break;
+            }
+        }
+    }
+
+    if (rec.subrecords.size() >= 2) score += 1;
+    if (plainBytes >= 350) score += 1;
+
+    return score >= 3;
+}
+
+static std::wstring CompactLine(std::wstring s) {
+    for (auto& ch : s) {
+        if (ch == L'\r' || ch == L'\n' || ch == L'\t') ch = L' ';
+    }
+
+    std::wstring out;
+    out.reserve(s.size());
+    bool prevSpace = true;
+    for (wchar_t ch : s) {
+        if (ch < 32) continue;
+        bool isSpace = (ch == L' ');
+        if (isSpace && prevSpace) continue;
+        out.push_back(ch);
+        prevSpace = isSpace;
+    }
+
+    while (!out.empty() && out.front() == L' ') out.erase(out.begin());
+    while (!out.empty() && out.back() == L' ') out.pop_back();
+    return out;
+}
+
+static std::wstring DeriveBookTitle(arena2::TextRecord& rec, const std::vector<uint8_t>& fileBytes, std::wstring_view indexLabel) {
+    std::wstring label(indexLabel);
+    std::wstring labelLow = ToLowerCopy(label);
+    const bool looksDialogueLabel = (labelLow.find(L"dialogue") != std::wstring::npos || labelLow.find(L"message") != std::wstring::npos);
+    if (!label.empty() && _wcsicmp(label.c_str(), L"Uncategorized") != 0 && !looksDialogueLabel) {
+        std::wstring sline = CompactLine(label);
+        if (!sline.empty()) return sline;
+    }
+
+    rec.EnsureParsed(fileBytes);
+    if (!rec.subrecords.empty()) {
+        auto& tok = rec.subrecords[0].EnsureTokens();
+        std::wstring plain = winutil::WidenUtf8(tok.plain);
+
+        size_t pos = 0;
+        while (pos < plain.size()) {
+            size_t eol = plain.find(L'\n', pos);
+            std::wstring line = (eol == std::wstring::npos) ? plain.substr(pos) : plain.substr(pos, eol - pos);
+            line = CompactLine(line);
+            if (!line.empty() && line[0] != L'%' && line[0] != L'_') {
+                if (line.size() > 72) line = line.substr(0, 72) + L"...";
+                return line;
+            }
+            if (eol == std::wstring::npos) break;
+            pos = eol + 1;
+        }
+    }
+
+    wchar_t buf[64]{};
+    swprintf_s(buf, L"Book 0x%04X", (unsigned)rec.recordId);
+    return buf;
+}
+
+static std::wstring FormatBookRecLabel(uint16_t id, std::wstring_view title) {
+    std::wstring t(title);
+    if (t.empty()) t = L"Book";
+    wchar_t buf[96]{};
+    swprintf_s(buf, L"[0x%04X]", (unsigned)id);
+    t.append(L" ");
+    t.append(buf);
+    return t;
+}
+
 static void InitListColumns(HWND hList) {
     LVCOLUMNW col{};
     col.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
@@ -276,6 +374,8 @@ void MainWindow::StartTreeBuild() {
     m_pendingQuestIdx.clear();
     m_pendingQuestParents.clear();
     m_questInsertPos = 0;
+    m_bookRecordIds.clear();
+    m_bookRecordTitles.clear();
 
     if (!m_varHashLoaded) {
         std::filesystem::path exeDir = winutil::GetExeDirectory();
@@ -329,13 +429,24 @@ void MainWindow::StartTreeBuild() {
         return buckets.back();
     };
 
-    for (const auto& r : m_text.records) {
+    std::vector<std::pair<uint16_t, std::wstring>> bookEntries;
+
+    for (auto& r : m_text.records) {
         std::wstring label;
         if (m_indexLoaded) {
             auto v = m_index.LabelFor(r.recordId);
             label.assign(v.begin(), v.end());
         }
         if (label.empty()) label = L"Uncategorized";
+
+        if (LooksLikeBookRecord(r, m_text.fileBytes, label)) {
+            std::wstring title = DeriveBookTitle(r, m_text.fileBytes, label);
+            m_bookRecordIds.insert(r.recordId);
+            m_bookRecordTitles[r.recordId] = title;
+            bookEntries.push_back({ r.recordId, title });
+            continue;
+        }
+
         getBucket(label).ids.push_back(r.recordId);
     }
 
@@ -387,6 +498,28 @@ void MainWindow::StartTreeBuild() {
         if (ra != rb) return ra < rb;
         return _wcsicmp(a.label.c_str(), b.label.c_str()) < 0;
     });
+
+    if (!bookEntries.empty()) {
+        std::sort(bookEntries.begin(), bookEntries.end(), [](const auto& a, const auto& b) {
+            int cmp = _wcsicmp(a.second.c_str(), b.second.c_str());
+            if (cmp != 0) return cmp < 0;
+            return a.first < b.first;
+        });
+
+        std::wstring booksText = L"Books (" + std::to_wstring(bookEntries.size()) + L")";
+        TVINSERTSTRUCTW bi{};
+        bi.hParent = m_treeRootText;
+        bi.hInsertAfter = TVI_LAST;
+        bi.item.mask = TVIF_TEXT | TVIF_PARAM;
+        bi.item.pszText = const_cast<wchar_t*>(booksText.c_str());
+        bi.item.lParam = 0;
+        HTREEITEM booksRoot = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&bi);
+
+        for (const auto& be : bookEntries) {
+            m_pendingTreeIds.push_back(be.first);
+            m_pendingTreeParents.push_back(booksRoot);
+        }
+    }
 
     for (auto& g : groups) {
         std::wstring t = g.label + L" (" + std::to_wstring(g.count) + L")";
@@ -489,6 +622,10 @@ void MainWindow::TreeBuildTick() {
             HTREEITEM parent = (i < m_pendingTreeParents.size()) ? m_pendingTreeParents[i] : m_treeRootText;
 
             std::wstring label = FormatRecLabel(id);
+            auto bt = m_bookRecordTitles.find(id);
+            if (bt != m_bookRecordTitles.end()) {
+                label = FormatBookRecLabel(id, bt->second);
+            }
 
             TVINSERTSTRUCTW recIns{};
             recIns.hParent = parent;
