@@ -159,6 +159,7 @@ private:
 
     // Commands
     void CmdOpenArena2();
+    void CmdOpenSpire();
     void CmdExportSubrecords();
     void CmdExportTokens();
     void CmdExportVariables();

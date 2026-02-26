@@ -212,6 +212,7 @@ static HMENU BuildMenuBar() {
     HMENU hHelp = CreateMenu();
 
     AppendMenuW(hFile, MF_STRING, IDM_FILE_OPEN_ARENA2, L"Open ARENA2 Folder...");
+    AppendMenuW(hFile, MF_STRING, IDM_FILE_OPEN_SPIRE, L"Open spire Folder...");
     AppendMenuW(hFile, MF_STRING, IDM_FILE_INDICES, L"Indices...");
     AppendMenuW(hFile, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(hFile, MF_STRING, IDM_FILE_EXIT, L"Exit");
@@ -334,6 +335,7 @@ void MainWindow::OnSize(int cx, int cy) {
 void MainWindow::OnCommand(WORD id) {
     switch (id) {
     case IDM_FILE_OPEN_ARENA2: CmdOpenArena2(); break;
+    case IDM_FILE_OPEN_SPIRE: CmdOpenSpire(); break;
     case IDM_FILE_INDICES:
         if (!m_indicesWnd.IsOpen()) m_indicesWnd.Create(GetModuleHandleW(nullptr), m_hwnd, this);
         m_indicesWnd.Refresh();
@@ -948,6 +950,18 @@ void MainWindow::OnTreeSelChanged() {
     ShowQuestView(false);
     ListView_DeleteAllItems(m_list);
     SetWindowTextW(m_preview, L"");
+}
+
+
+void MainWindow::CmdOpenSpire() {
+    if (m_loading.load()) return;
+
+    auto folder = winutil::PickFolder(m_hwnd, L"Select Battlespire folder");
+    if (!folder) return;
+
+    std::wstring msg = L"Selected spire folder:\n" + folder->wstring();
+    MessageBoxW(m_hwnd, msg.c_str(), L"Open spire Folder", MB_OK | MB_ICONINFORMATION);
+    SetStatus(L"Opened spire folder selection.");
 }
 
 void MainWindow::CmdOpenArena2() {
