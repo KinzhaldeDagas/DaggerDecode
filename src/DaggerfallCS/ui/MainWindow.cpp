@@ -978,11 +978,29 @@ void MainWindow::CmdOpenSpire() {
         auto* r = new LoadResult();
         r->questsOk = false;
 
+        // Load hash catalog for resolving quest state variable names.
+        arena2::VarHashCatalog qhash;
+        {
+            std::filesystem::path exeDir = winutil::GetExeDirectory();
+            std::filesystem::path p1 = exeDir / L"TEXT_VARIABLE_HASHES.txt";
+            std::filesystem::path p2 = exeDir / L"data" / L"TEXT_VARIABLE_HASHES.txt";
+            std::wstring herr;
+            if (std::filesystem::exists(p1)) qhash.LoadFromFile(p1, &herr);
+            else if (std::filesystem::exists(p2)) qhash.LoadFromFile(p2, &herr);
+        }
+
         std::wstring err;
         arena2::TextRsc loaded;
         if (arena2::TextRsc::LoadFromBattlespireRoot(spirePath, loaded, &err)) {
             r->ok = true;
             r->text = std::move(loaded);
+
+            std::wstring qerr;
+            if (r->quests.LoadFromBattlespireRoot(spirePath, &qhash, &qerr)) {
+                r->questsOk = true;
+            } else {
+                r->questsOk = false;
+            }
         }
         else {
             r->ok = false;

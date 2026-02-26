@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "TextRsc.h"
+#include "../battlespire/BattlespireFormats.h"
 
 namespace arena2 {
 
@@ -141,11 +142,10 @@ static bool ReadHeaderEntries_Spec(const std::vector<uint8_t>& file, uint16_t he
 }
 
 
-static bool LoadTextDbFromPath(const std::filesystem::path& path, TextRsc& out, std::wstring* err) {
+static bool LoadTextDbFromBytes(std::vector<uint8_t> bytes, const std::filesystem::path& sourcePath, TextRsc& out, std::wstring* err) {
     out = {};
-    out.sourcePath = path;
-
-    if (!ReadAllBytes(path, out.fileBytes, err)) return false;
+    out.sourcePath = sourcePath;
+    out.fileBytes = std::move(bytes);
     const auto& file = out.fileBytes;
 
     if (file.size() < 8) { if (err) *err = L"Text database too small."; return false; }
@@ -177,6 +177,13 @@ static bool LoadTextDbFromPath(const std::filesystem::path& path, TextRsc& out, 
     }
 
     return true;
+}
+
+
+static bool LoadTextDbFromPath(const std::filesystem::path& path, TextRsc& out, std::wstring* err) {
+    std::vector<uint8_t> bytes;
+    if (!ReadAllBytes(path, bytes, err)) return false;
+    return LoadTextDbFromBytes(std::move(bytes), path, out, err);
 }
 
 bool TextRsc::LoadFromFile(const std::filesystem::path& filePath, TextRsc& out, std::wstring* err) {
@@ -221,19 +228,53 @@ bool TextRsc::LoadFromBattlespireRoot(const std::filesystem::path& spireRoot, Te
     out = {};
 
     std::filesystem::path candidate;
-    if (!TryResolveTextRscPath(spireRoot,
+    if (TryResolveTextRscPath(spireRoot,
                                { std::filesystem::path("TEXT.RSC"), std::filesystem::path("GameData") / "TEXT.RSC" },
                                candidate)) {
-        if (err) *err = L"Could not find TEXT.RSC (expected in selected folder or in a GameData subfolder).";
+        return LoadTextDbFromPath(candidate, out, err);
+    }
+
+    // tools/bsatool is the source of truth for pre-Morrowind BSA footer layout and decompression.
+    std::filesystem::path txtBsa;
+    if (!TryResolveTextRscPath(spireRoot,
+                               { std::filesystem::path("TXT.BSA"), std::filesystem::path("GameData") / "TXT.BSA" },
+                               txtBsa)) {
+        if (err) *err = L"Could not find TEXT.RSC or TXT.BSA (expected in selected folder or GameData subfolder).";
         return false;
     }
 
-    out.sourcePath = candidate;
+    battlespire::BsaArchive archive;
+    std::wstring aerr;
+    if (!battlespire::BsaArchive::LoadFromFile(txtBsa, archive, &aerr)) {
+        if (err) {
+            wchar_t buf[512]{};
+            swprintf_s(buf, L"Failed to read TXT.BSA: %s", aerr.c_str());
+            *err = buf;
+        }
+        return false;
+    }
 
-    // Parse as generic Text Record Database
-    return LoadTextDbFromPath(candidate, out, err);
+    const auto* textEntry = archive.FindEntryCaseInsensitive("TEXT.RSC");
+    if (!textEntry) {
+        if (err) *err = L"TXT.BSA was loaded but TEXT.RSC entry was not found.";
+        return false;
+    }
+
+    std::vector<uint8_t> textBytes;
+    std::wstring derr;
+    if (!archive.ReadEntryData(*textEntry, textBytes, &derr)) {
+        if (err) {
+            wchar_t buf[512]{};
+            swprintf_s(buf, L"Failed to extract TEXT.RSC from TXT.BSA: %s", derr.c_str());
+            *err = buf;
+        }
+        return false;
+    }
+
+    std::filesystem::path virtualSource = txtBsa;
+    virtualSource += L":TEXT.RSC";
+    return LoadTextDbFromBytes(std::move(textBytes), virtualSource, out, err);
 }
-
 
 const TextRecord* TextRsc::Find(uint16_t id) const {
     for (const auto& r : records) if (r.recordId == id) return &r;
