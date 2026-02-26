@@ -62,9 +62,10 @@ struct TextRsc {
     // Records are indexed at load-time; subrecords are parsed on demand.
     std::vector<TextRecord> records;
 
-        static bool LoadFromFile(const std::filesystem::path& filePath, TextRsc& out, std::wstring* err);
+    static bool LoadFromFile(const std::filesystem::path& filePath, TextRsc& out, std::wstring* err);
 
-static bool LoadFromArena2Root(const std::filesystem::path& arena2Root, TextRsc& out, std::wstring* err);
+    static bool LoadFromArena2Root(const std::filesystem::path& arena2Root, TextRsc& out, std::wstring* err);
+    static bool LoadFromBattlespireRoot(const std::filesystem::path& spireRoot, TextRsc& out, std::wstring* err);
 
     const TextRecord* Find(uint16_t id) const;
     TextRecord* FindMutable(uint16_t id);

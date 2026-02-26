@@ -187,28 +187,52 @@ bool TextRsc::LoadFromFile(const std::filesystem::path& filePath, TextRsc& out, 
     return LoadTextDbFromPath(filePath, out, err);
 }
 
+static bool TryResolveTextRscPath(const std::filesystem::path& root, const std::vector<std::filesystem::path>& relCandidates,
+                                  std::filesystem::path& outPath) {
+    for (const auto& rel : relCandidates) {
+        auto p = root / rel;
+        if (std::filesystem::exists(p)) {
+            outPath = std::move(p);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool TextRsc::LoadFromArena2Root(const std::filesystem::path& arena2Root, TextRsc& out, std::wstring* err) {
     out = {};
-    std::filesystem::path root = arena2Root;
 
-    std::filesystem::path candidate = root / "TEXT.RSC";
-    if (!std::filesystem::exists(candidate)) {
-        std::filesystem::path arena2 = root / "ARENA2";
-        candidate = arena2 / "TEXT.RSC";
-        if (!std::filesystem::exists(candidate)) {
-            if (err) *err = L"Could not find TEXT.RSC (expected in selected folder or in an ARENA2 subfolder).";
-            return false;
-        }
-        root = arena2;
+    std::filesystem::path candidate;
+    if (!TryResolveTextRscPath(arena2Root,
+                               { std::filesystem::path("TEXT.RSC"), std::filesystem::path("ARENA2") / "TEXT.RSC" },
+                               candidate)) {
+        if (err) *err = L"Could not find TEXT.RSC (expected in selected folder or in an ARENA2 subfolder).";
+        return false;
     }
 
     out.sourcePath = candidate;
 
     // Parse as generic Text Record Database
     return LoadTextDbFromPath(candidate, out, err);
+}
 
+bool TextRsc::LoadFromBattlespireRoot(const std::filesystem::path& spireRoot, TextRsc& out, std::wstring* err) {
+    out = {};
+
+    std::filesystem::path candidate;
+    if (!TryResolveTextRscPath(spireRoot,
+                               { std::filesystem::path("TEXT.RSC"), std::filesystem::path("GameData") / "TEXT.RSC" },
+                               candidate)) {
+        if (err) *err = L"Could not find TEXT.RSC (expected in selected folder or in a GameData subfolder).";
+        return false;
     }
 
+    out.sourcePath = candidate;
+
+    // Parse as generic Text Record Database
+    return LoadTextDbFromPath(candidate, out, err);
+}
 
 
 const TextRecord* TextRsc::Find(uint16_t id) const {
