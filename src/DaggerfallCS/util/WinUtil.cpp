@@ -4,6 +4,71 @@
 
 namespace winutil {
 
+
+std::optional<std::filesystem::path> PickFile(HWND owner, const wchar_t* title, const wchar_t* filterSpec) {
+    IFileDialog* pfd = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pfd));
+    if (FAILED(hr) || !pfd) return std::nullopt;
+
+    DWORD opts = 0;
+    pfd->GetOptions(&opts);
+    pfd->SetOptions((opts | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST) & ~FOS_PICKFOLDERS);
+    pfd->SetTitle(title);
+
+    std::vector<COMDLG_FILTERSPEC> filters;
+    if (filterSpec && *filterSpec) {
+        // filterSpec pairs: "Label|Pattern|Label|Pattern"
+        std::wstring spec(filterSpec);
+        size_t p = 0;
+        while (p < spec.size()) {
+            size_t a = spec.find(L'|', p);
+            if (a == std::wstring::npos) break;
+            size_t b = spec.find(L'|', a + 1);
+            std::wstring label = spec.substr(p, a - p);
+            std::wstring pattern = (b == std::wstring::npos) ? spec.substr(a + 1) : spec.substr(a + 1, b - (a + 1));
+            if (!label.empty() && !pattern.empty()) {
+                COMDLG_FILTERSPEC f{ _wcsdup(label.c_str()), _wcsdup(pattern.c_str()) };
+                filters.push_back(f);
+            }
+            if (b == std::wstring::npos) break;
+            p = b + 1;
+        }
+        if (!filters.empty()) {
+            pfd->SetFileTypes((UINT)filters.size(), filters.data());
+            pfd->SetFileTypeIndex(1);
+        }
+    }
+
+    hr = pfd->Show(owner);
+    if (FAILED(hr)) {
+        for (auto& f : filters) { free((void*)f.pszName); free((void*)f.pszSpec); }
+        pfd->Release();
+        return std::nullopt;
+    }
+
+    IShellItem* psi = nullptr;
+    hr = pfd->GetResult(&psi);
+    if (FAILED(hr) || !psi) {
+        for (auto& f : filters) { free((void*)f.pszName); free((void*)f.pszSpec); }
+        pfd->Release();
+        return std::nullopt;
+    }
+
+    PWSTR psz = nullptr;
+    hr = psi->GetDisplayName(SIGDN_FILESYSPATH, &psz);
+
+    std::optional<std::filesystem::path> out;
+    if (SUCCEEDED(hr) && psz) {
+        out = std::filesystem::path(psz);
+        CoTaskMemFree(psz);
+    }
+
+    psi->Release();
+    pfd->Release();
+    for (auto& f : filters) { free((void*)f.pszName); free((void*)f.pszSpec); }
+    return out;
+}
+
 std::optional<std::filesystem::path> PickFolder(HWND owner, const wchar_t* title) {
     IFileDialog* pfd = nullptr;
     HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pfd));

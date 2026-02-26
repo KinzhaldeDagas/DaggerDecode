@@ -73,6 +73,72 @@ bool QuestCatalog::IsStandardQuestFilename(const std::string& baseName) {
     return true;
 }
 
+
+static std::string UpperStem(const std::filesystem::path& p);
+static void ParseFilenameMeta(QuestEntry& q);
+
+
+static bool TryResolveQuestRoot(const std::filesystem::path& root,
+                                const std::vector<std::filesystem::path>& relCandidates,
+                                std::filesystem::path& outPath) {
+    for (const auto& rel : relCandidates) {
+        auto p = root / rel;
+        if (std::filesystem::exists(p) && std::filesystem::is_directory(p)) {
+            outPath = std::move(p);
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool LoadFromQuestRoot(QuestCatalog& catalog,
+                              const std::filesystem::path& folder,
+                              const std::vector<std::filesystem::path>& relCandidates,
+                              const VarHashCatalog* varHashes,
+                              std::wstring* err,
+                              const wchar_t* notFoundMessage) {
+    catalog.quests.clear();
+    catalog.hashes = varHashes;
+
+    std::filesystem::path root;
+    if (!TryResolveQuestRoot(folder, relCandidates, root)) {
+        if (err) *err = notFoundMessage;
+        return false;
+    }
+    catalog.arena2Root = root;
+
+    std::vector<std::filesystem::path> qbnFiles;
+    for (auto& it : std::filesystem::directory_iterator(root)) {
+        if (!it.is_regular_file()) continue;
+        auto ext = it.path().extension().string();
+        for (auto& c : ext) c = (char)toupper((unsigned char)c);
+        if (ext == ".QBN") qbnFiles.push_back(it.path());
+    }
+
+    std::sort(qbnFiles.begin(), qbnFiles.end(), [](const auto& a, const auto& b) { return UpperStem(a) < UpperStem(b); });
+
+    catalog.quests.reserve(qbnFiles.size());
+    for (const auto& qbn : qbnFiles) {
+        QuestEntry e{};
+        e.baseName = UpperStem(qbn);
+        e.qbnPath = qbn;
+        e.qrcPath = qbn;
+        e.qrcPath.replace_extension(".QRC");
+        ParseFilenameMeta(e);
+
+        std::wstring perr;
+        e.qbnLoaded = e.qbn.LoadFromFile(e.qbnPath, varHashes, &perr);
+        catalog.quests.push_back(std::move(e));
+    }
+
+    if (catalog.quests.empty()) {
+        if (err) *err = L"No QBN files found in quest data folder.";
+        return false;
+    }
+
+    return true;
+}
+
 static std::string UpperStem(const std::filesystem::path& p) {
     auto s = p.stem().string();
     for (auto& c : s) c = (char)toupper((unsigned char)c);
@@ -237,45 +303,21 @@ static void ParseFilenameMeta(QuestEntry& q) {
 }
 
 bool QuestCatalog::LoadFromArena2Root(const std::filesystem::path& folder, const VarHashCatalog* varHashes, std::wstring* err) {
-    quests.clear();
-	this->hashes = varHashes;
+    return LoadFromQuestRoot(*this,
+                             folder,
+                             { std::filesystem::path("."), std::filesystem::path("ARENA2") },
+                             varHashes,
+                             err,
+                             L"Could not find quest data folder (expected selected folder or an ARENA2 subfolder).");
+}
 
-    std::filesystem::path root = folder;
-    std::filesystem::path arena2 = root / "ARENA2";
-    if (std::filesystem::exists(arena2) && std::filesystem::is_directory(arena2)) root = arena2;
-    arena2Root = root;
-
-    // Scan for *.QBN in ARENA2 root.
-    std::vector<std::filesystem::path> qbnFiles;
-    for (auto& it : std::filesystem::directory_iterator(root)) {
-        if (!it.is_regular_file()) continue;
-        auto ext = it.path().extension().string();
-        for (auto& c : ext) c = (char)toupper((unsigned char)c);
-        if (ext == ".QBN") qbnFiles.push_back(it.path());
-    }
-
-    std::sort(qbnFiles.begin(), qbnFiles.end(), [](const auto& a, const auto& b) { return UpperStem(a) < UpperStem(b); });
-
-    quests.reserve(qbnFiles.size());
-    for (const auto& qbn : qbnFiles) {
-        QuestEntry e{};
-        e.baseName = UpperStem(qbn);
-        e.qbnPath = qbn;
-        e.qrcPath = qbn;
-        e.qrcPath.replace_extension(".QRC");
-        ParseFilenameMeta(e);
-
-        std::wstring perr;
-		e.qbnLoaded = e.qbn.LoadFromFile(e.qbnPath, varHashes, &perr); // Non-fatal: allow listing even if parse fails
-        quests.push_back(std::move(e));
-    }
-
-    if (quests.empty()) {
-        if (err) *err = L"No QBN files found in ARENA2.";
-        return false;
-    }
-
-    return true;
+bool QuestCatalog::LoadFromBattlespireRoot(const std::filesystem::path& folder, const VarHashCatalog* varHashes, std::wstring* err) {
+    return LoadFromQuestRoot(*this,
+                             folder,
+                             { std::filesystem::path("."), std::filesystem::path("GameData") },
+                             varHashes,
+                             err,
+                             L"Could not find Battlespire quest data folder (expected selected folder or a GameData subfolder).");
 }
 
 bool QuestCatalog::EnsureQrcLoaded(size_t questIndex, std::wstring* err) {

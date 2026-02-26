@@ -4,6 +4,7 @@
 #include "../util/WinUtil.h"
 #include "../export/CsvWriter.h"
 #include "../arena2/QuestOpcodeDisasm.h"
+#include "../battlespire/BattlespireFormats.h"
 
 namespace ui {
 
@@ -13,9 +14,12 @@ struct MainWindow::LoadResult {
     arena2::TextRsc text;
     arena2::QuestCatalog quests;
     bool questsOk{ false };
+    std::vector<battlespire::BsaArchive> bsaArchives;
+    bool bsaOk{ false };
 };
 
 static const wchar_t* kWndClass = L"DaggerfallCS_MainWindow";
+static std::wstring HexU32(uint32_t v);
 
 static std::wstring ToLowerCopy(std::wstring s) {
     for (auto& c : s) c = (wchar_t)towlower(c);
@@ -128,6 +132,95 @@ static std::wstring CompactLine(std::wstring s) {
     return out;
 }
 
+
+static bool IsLikelyUtf8Printable(const std::vector<uint8_t>& bytes) {
+    if (bytes.empty()) return true;
+    size_t printable = 0;
+    size_t control = 0;
+    size_t sample = std::min<size_t>(bytes.size(), 4096);
+    for (size_t i = 0; i < sample; ++i) {
+        uint8_t b = bytes[i];
+        if (b == 9 || b == 10 || b == 13) { printable++; continue; }
+        if (b >= 32 && b < 127) printable++;
+        else if (b < 32) control++;
+        else printable++;
+    }
+    return control * 8 < sample;
+}
+
+static std::wstring HexDumpPreview(const std::vector<uint8_t>& bytes, size_t maxBytes = 256) {
+    std::wstring out;
+    size_t n = std::min(bytes.size(), maxBytes);
+    wchar_t line[128]{};
+    for (size_t i = 0; i < n; i += 16) {
+        swprintf_s(line, L"%08X: ", (unsigned)i);
+        out += line;
+        for (size_t j = 0; j < 16; ++j) {
+            if (i + j < n) {
+                swprintf_s(line, L"%02X ", (unsigned)bytes[i + j]);
+                out += line;
+            } else out += L"   ";
+        }
+        out += L" |";
+        for (size_t j = 0; j < 16 && i + j < n; ++j) {
+            wchar_t c = (bytes[i + j] >= 32 && bytes[i + j] < 127) ? (wchar_t)bytes[i + j] : L'.';
+            out.push_back(c);
+        }
+        out += L"|\r\n";
+    }
+    if (bytes.size() > n) out += L"...\r\n";
+    return out;
+}
+
+
+static std::wstring TrimWs(std::wstring v) {
+    auto issp = [](wchar_t c) { return c == L' ' || c == L'\t' || c == L'\r' || c == L'\n'; };
+    while (!v.empty() && issp(v.front())) v.erase(v.begin());
+    while (!v.empty() && issp(v.back())) v.pop_back();
+    return v;
+}
+
+static std::wstring ToLowerWs(std::wstring v) {
+    for (auto& c : v) c = (wchar_t)towlower(c);
+    return v;
+}
+
+static bool EndsWithWs(const std::wstring& s, const wchar_t* suffix) {
+    size_t n = wcslen(suffix);
+    if (s.size() < n) return false;
+    return _wcsicmp(s.c_str() + (s.size() - n), suffix) == 0;
+}
+
+static std::vector<std::vector<std::wstring>> ParseTabLines(const std::wstring& text) {
+    std::vector<std::vector<std::wstring>> rows;
+    size_t start = 0;
+    while (start <= text.size()) {
+        size_t end = text.find(L'\n', start);
+        std::wstring line = (end == std::wstring::npos) ? text.substr(start) : text.substr(start, end - start);
+        if (!line.empty() && line.back() == L'\r') line.pop_back();
+
+        std::vector<std::wstring> cols;
+        size_t cstart = 0;
+        while (cstart <= line.size()) {
+            size_t cend = line.find(L'\t', cstart);
+            std::wstring cell = (cend == std::wstring::npos) ? line.substr(cstart) : line.substr(cstart, cend - cstart);
+            cols.push_back(TrimWs(std::move(cell)));
+            if (cend == std::wstring::npos) break;
+            cstart = cend + 1;
+        }
+
+        bool any = false;
+        for (const auto& c : cols) {
+            if (!c.empty()) { any = true; break; }
+        }
+        if (any) rows.push_back(std::move(cols));
+
+        if (end == std::wstring::npos) break;
+        start = end + 1;
+    }
+    return rows;
+}
+
 static std::wstring DeriveBookTitle(arena2::TextRecord& rec, const std::vector<uint8_t>& fileBytes, std::wstring_view indexLabel) {
     std::wstring label(indexLabel);
     std::wstring labelLow = ToLowerCopy(label);
@@ -213,6 +306,7 @@ static HMENU BuildMenuBar() {
 
     AppendMenuW(hFile, MF_STRING, IDM_FILE_OPEN_ARENA2, L"Open ARENA2 Folder...");
     AppendMenuW(hFile, MF_STRING, IDM_FILE_OPEN_SPIRE, L"Open spire Folder...");
+    AppendMenuW(hFile, MF_STRING, IDM_FILE_EXTRACT_BSA, L"Extract BSA...");
     AppendMenuW(hFile, MF_STRING, IDM_FILE_INDICES, L"Indices...");
     AppendMenuW(hFile, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(hFile, MF_STRING, IDM_FILE_EXIT, L"Exit");
@@ -336,6 +430,7 @@ void MainWindow::OnCommand(WORD id) {
     switch (id) {
     case IDM_FILE_OPEN_ARENA2: CmdOpenArena2(); break;
     case IDM_FILE_OPEN_SPIRE: CmdOpenSpire(); break;
+    case IDM_FILE_EXTRACT_BSA: CmdExtractBsa(); break;
     case IDM_FILE_INDICES:
         if (!m_indicesWnd.IsOpen()) m_indicesWnd.Create(GetModuleHandleW(nullptr), m_hwnd, this);
         m_indicesWnd.Refresh();
@@ -349,7 +444,7 @@ void MainWindow::OnCommand(WORD id) {
     case IDM_EXPORT_QUEST_STAGES: CmdExportQuestStages(); break;
     case IDM_EXPORT_TES4_QD: CmdExportTes4QuestDialogue(); break;
     case IDM_HELP_ABOUT:
-        MessageBoxW(m_hwnd, L"Daggerfall-CS MVP\n\nLoads ARENA2\\TEXT.RSC and exports CSV.", L"About", MB_OK | MB_ICONINFORMATION);
+        MessageBoxW(m_hwnd, L"Daggerfall-CS MVP\n\nLoads TEXT.RSC and Battlespire BSA resources and exports CSV.", L"About", MB_OK | MB_ICONINFORMATION);
         break;
     default: break;
     }
@@ -372,6 +467,7 @@ void MainWindow::StartTreeBuild() {
     m_treeInsertPos = 0;
     m_treeRootText = nullptr;
     m_treeRootQuests = nullptr;
+    m_treeRootBsa = nullptr;
     m_treePayloads.clear();
     m_pendingQuestIdx.clear();
     m_pendingQuestParents.clear();
@@ -419,6 +515,47 @@ void MainWindow::StartTreeBuild() {
         TreeView_SetItem(m_tree, &ti);
     }
 
+    // BSA root (Battlespire)
+    ins.item.pszText = const_cast<wchar_t*>(L"BSA Archives");
+    m_treeRootBsa = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&ins);
+    if (m_treeRootBsa) {
+        auto* pr = AddPayload(TreePayload::Kind::BsaRoot);
+        TVITEMW ti{};
+        ti.mask = TVIF_PARAM | TVIF_HANDLE;
+        ti.hItem = m_treeRootBsa;
+        ti.lParam = (LPARAM)pr;
+        TreeView_SetItem(m_tree, &ti);
+
+        for (size_t ai = 0; ai < m_bsaArchives.size(); ++ai) {
+            const auto& a = m_bsaArchives[ai];
+            std::wstring aname = a.sourcePath.filename().wstring();
+            aname += L" (" + std::to_wstring(a.entries.size()) + L" entries)";
+
+            TVINSERTSTRUCTW ains{};
+            ains.hParent = m_treeRootBsa;
+            ains.hInsertAfter = TVI_LAST;
+            ains.item.mask = TVIF_TEXT | TVIF_PARAM;
+            ains.item.pszText = const_cast<wchar_t*>(aname.c_str());
+            ains.item.lParam = (LPARAM)AddPayload(TreePayload::Kind::BsaArchive, 0, (size_t)-1, ai, (size_t)-1);
+            HTREEITEM ah = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&ains);
+
+            for (size_t ei = 0; ei < a.entries.size(); ++ei) {
+                const auto& e = a.entries[ei];
+                std::wstring label = winutil::WidenUtf8(e.name);
+                wchar_t suffix[96]{};
+                swprintf_s(suffix, L"  [off=0x%X, size=%u%s]", (unsigned)e.offset, (unsigned)e.packedSize, e.compressionFlag ? L", cmp" : L"");
+                label += suffix;
+
+                TVINSERTSTRUCTW eins{};
+                eins.hParent = ah;
+                eins.hInsertAfter = TVI_LAST;
+                eins.item.mask = TVIF_TEXT | TVIF_PARAM;
+                eins.item.pszText = const_cast<wchar_t*>(label.c_str());
+                eins.item.lParam = (LPARAM)AddPayload(TreePayload::Kind::BsaEntry, 0, (size_t)-1, ai, ei);
+                SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&eins);
+            }
+        }
+    }
 
     struct Bucket { std::wstring label; std::vector<uint16_t> ids; };
     std::vector<Bucket> buckets;
@@ -680,6 +817,7 @@ void MainWindow::TreeBuildTick() {
     KillTimer(m_hwnd, TIMER_POP_TREE);
     TreeView_Expand(m_tree, m_treeRootText, TVE_EXPAND);
     TreeView_Expand(m_tree, m_treeRootQuests, TVE_EXPAND);
+    TreeView_Expand(m_tree, m_treeRootBsa, TVE_EXPAND);
 
     SetStatus(L"Ready.");
 }
@@ -946,12 +1084,177 @@ void MainWindow::OnTreeSelChanged() {
         return;
     }
 
+    if (p->kind == TreePayload::Kind::BsaEntry) {
+        SetupListColumns_TextSubrecords();
+        ListView_DeleteAllItems(m_list);
+
+        if (p->bsaArchiveIndex >= m_bsaArchives.size()) return;
+        const auto& ar = m_bsaArchives[p->bsaArchiveIndex];
+        if (p->bsaEntryIndex >= ar.entries.size()) return;
+        const auto& e = ar.entries[p->bsaEntryIndex];
+
+        std::vector<uint8_t> bytes;
+        std::wstring err;
+        if (!ar.ReadEntryData(e, bytes, &err)) {
+            SetWindowTextW(m_preview, (L"Failed to decode BSA entry: " + err).c_str());
+            return;
+        }
+
+        std::wstring preview;
+        bool renderedTable = false;
+        if (IsLikelyUtf8Printable(bytes)) {
+            std::string text(bytes.begin(), bytes.end());
+            if (text.size() > 131072) text.resize(131072);
+            preview = winutil::WidenUtf8(text);
+
+            std::wstring nameLow = ToLowerWs(winutil::WidenUtf8(e.name));
+            bool tableLikeExt = EndsWithWs(nameLow, L".xls") || EndsWithWs(nameLow, L".txt") || EndsWithWs(nameLow, L".csv");
+            if (tableLikeExt && preview.find(L'	') != std::wstring::npos) {
+                auto rows = ParseTabLines(preview);
+                if (rows.size() >= 2) {
+                    size_t maxCols = 0;
+                    for (const auto& r : rows) maxCols = std::max(maxCols, r.size());
+                    if (maxCols >= 3) {
+                        // Try to find explicit dialogue headers (Saycode, NPC SAY, Replycode...), otherwise use densest row.
+                        size_t headerRow = 0;
+                        size_t bestScore = 0;
+                        for (size_t ri = 0; ri < rows.size(); ++ri) {
+                            size_t nonEmpty = 0;
+                            bool hasSaycode = false;
+                            for (const auto& c : rows[ri]) {
+                                if (!c.empty()) nonEmpty++;
+                                if (ToLowerWs(c) == L"saycode") hasSaycode = true;
+                            }
+                            size_t score = nonEmpty + (hasSaycode ? 100 : 0);
+                            if (score > bestScore) { bestScore = score; headerRow = ri; }
+                        }
+
+                        while (ListView_DeleteColumn(m_list, 0)) {}
+                        LVCOLUMNW c{};
+                        c.mask = LVCF_TEXT | LVCF_WIDTH;
+                        for (size_t ci = 0; ci < maxCols; ++ci) {
+                            std::wstring hn = (ci < rows[headerRow].size() && !rows[headerRow][ci].empty()) ? rows[headerRow][ci] : (L"Col" + std::to_wstring(ci + 1));
+                            c.cx = (ci == 0) ? 120 : 220;
+                            c.pszText = const_cast<wchar_t*>(hn.c_str());
+                            ListView_InsertColumn(m_list, (int)ci, &c);
+                        }
+
+                        ListView_DeleteAllItems(m_list);
+                        int outRow = 0;
+                        for (size_t ri = headerRow + 1; ri < rows.size(); ++ri) {
+                            bool any = false;
+                            for (const auto& cell : rows[ri]) if (!cell.empty()) { any = true; break; }
+                            if (!any) continue;
+
+                            LVITEMW it{};
+                            it.mask = LVIF_TEXT;
+                            it.iItem = outRow;
+                            std::wstring first = (rows[ri].empty() ? L"" : rows[ri][0]);
+                            it.pszText = const_cast<wchar_t*>(first.c_str());
+                            ListView_InsertItem(m_list, &it);
+                            for (size_t ci = 1; ci < maxCols; ++ci) {
+                                std::wstring cell = (ci < rows[ri].size()) ? rows[ri][ci] : L"";
+                                ListView_SetItemText(m_list, outRow, (int)ci, const_cast<wchar_t*>(cell.c_str()));
+                            }
+                            outRow++;
+                            if (outRow > 4000) break;
+                        }
+
+                        renderedTable = (outRow > 0);
+                    }
+                }
+            }
+        } else {
+            preview = HexDumpPreview(bytes);
+        }
+
+        if (!renderedTable) {
+            SetupListColumns_TextSubrecords();
+            ListView_DeleteAllItems(m_list);
+            auto addRow = [&](int idx, const std::wstring& text) {
+                LVITEMW it{};
+                it.mask = LVIF_TEXT;
+                it.iItem = idx;
+                std::wstring i = std::to_wstring(idx);
+                it.pszText = const_cast<wchar_t*>(i.c_str());
+                ListView_InsertItem(m_list, &it);
+                ListView_SetItemText(m_list, idx, 1, const_cast<wchar_t*>(text.c_str()));
+            };
+            addRow(0, L"Name: " + winutil::WidenUtf8(e.name));
+            addRow(1, L"Offset: 0x" + HexU32(e.offset));
+            addRow(2, L"Packed Size: " + std::to_wstring(e.packedSize));
+            addRow(3, L"Compression Flag: " + std::to_wstring(e.compressionFlag));
+            addRow(4, L"Decoded Size: " + std::to_wstring(bytes.size()));
+        }
+
+        SetWindowTextW(m_preview, preview.c_str());
+        m_viewMode = ViewMode::BsaEntry;
+        return;
+    }
+
     // Root/group nodes
     ShowQuestView(false);
     ListView_DeleteAllItems(m_list);
     SetWindowTextW(m_preview, L"");
 }
 
+
+
+void MainWindow::CmdExtractBsa() {
+    auto picked = winutil::PickFile(m_hwnd,
+        L"Select Battlespire BSA to extract",
+        L"Battlespire Archives (*.bsa)|*.bsa|All Files (*.*)|*.*");
+    if (!picked) return;
+
+    std::filesystem::path bsaPath = *picked;
+    battlespire::BsaArchive archive;
+    std::wstring err;
+    if (!battlespire::BsaArchive::LoadFromFile(bsaPath, archive, &err)) {
+        MessageBoxW(m_hwnd, (L"Failed to open BSA: " + err).c_str(), L"Extract BSA", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    std::filesystem::path outRoot = winutil::GetExeDirectory();
+    std::filesystem::path outDir = outRoot / (bsaPath.stem().wstring() + L"_extracted");
+
+    std::error_code ec;
+    std::filesystem::create_directories(outDir, ec);
+    if (ec) {
+        MessageBoxW(m_hwnd, (L"Failed to create output folder: " + outDir.wstring()).c_str(), L"Extract BSA", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    size_t okCount = 0;
+    size_t failCount = 0;
+    for (size_t i = 0; i < archive.entries.size(); ++i) {
+        const auto& e = archive.entries[i];
+
+        std::vector<uint8_t> bytes;
+        std::wstring derr;
+        if (!archive.ReadEntryData(e, bytes, &derr)) {
+            failCount++;
+            continue;
+        }
+
+        std::wstring name = winutil::WidenUtf8(e.name);
+        if (name.empty()) name = L"entry_" + std::to_wstring(i);
+        for (auto& c : name) {
+            if (c == L'/' || c == L'\\' || c == L':' || c == L'*' || c == L'?' || c == L'"' || c == L'<' || c == L'>' || c == L'|') c = L'_';
+        }
+
+        std::filesystem::path outPath = outDir / name;
+        std::ofstream f(outPath, std::ios::binary);
+        if (!f) { failCount++; continue; }
+        if (!bytes.empty()) f.write(reinterpret_cast<const char*>(bytes.data()), (std::streamsize)bytes.size());
+        if (!f.good()) { failCount++; continue; }
+        okCount++;
+    }
+
+    std::wstring msg = L"Extracted " + std::to_wstring(okCount) + L" entries to:\n" + outDir.wstring();
+    if (failCount) msg += L"\n\nFailed entries: " + std::to_wstring(failCount);
+    MessageBoxW(m_hwnd, msg.c_str(), L"Extract BSA", MB_OK | (failCount ? MB_ICONWARNING : MB_ICONINFORMATION));
+    SetStatus(L"BSA extraction complete: " + std::to_wstring(okCount) + L" files");
+}
 
 void MainWindow::CmdOpenSpire() {
     if (m_loading.load()) return;
@@ -978,11 +1281,51 @@ void MainWindow::CmdOpenSpire() {
         auto* r = new LoadResult();
         r->questsOk = false;
 
+        // Load hash catalog for resolving quest state variable names.
+        arena2::VarHashCatalog qhash;
+        {
+            std::filesystem::path exeDir = winutil::GetExeDirectory();
+            std::filesystem::path p1 = exeDir / L"TEXT_VARIABLE_HASHES.txt";
+            std::filesystem::path p2 = exeDir / L"data" / L"TEXT_VARIABLE_HASHES.txt";
+            std::wstring herr;
+            if (std::filesystem::exists(p1)) qhash.LoadFromFile(p1, &herr);
+            else if (std::filesystem::exists(p2)) qhash.LoadFromFile(p2, &herr);
+        }
+
         std::wstring err;
         arena2::TextRsc loaded;
         if (arena2::TextRsc::LoadFromBattlespireRoot(spirePath, loaded, &err)) {
             r->ok = true;
             r->text = std::move(loaded);
+
+            std::wstring qerr;
+            if (r->quests.LoadFromBattlespireRoot(spirePath, &qhash, &qerr)) {
+                r->questsOk = true;
+            } else {
+                r->questsOk = false;
+            }
+
+            // Auto-discover and load Battlespire BSA archives for browsing.
+            std::vector<std::filesystem::path> roots = { spirePath, spirePath / L"GameData" };
+            std::unordered_set<std::wstring> seen;
+            for (const auto& root : roots) {
+                if (!std::filesystem::exists(root) || !std::filesystem::is_directory(root)) continue;
+                for (auto& it : std::filesystem::directory_iterator(root)) {
+                    if (!it.is_regular_file()) continue;
+                    auto ext = it.path().extension().wstring();
+                    for (auto& c : ext) c = (wchar_t)towupper(c);
+                    if (ext != L".BSA") continue;
+                    auto canon = it.path().wstring();
+                    if (!seen.insert(canon).second) continue;
+
+                    battlespire::BsaArchive arc;
+                    std::wstring berr;
+                    if (battlespire::BsaArchive::LoadFromFile(it.path(), arc, &berr)) {
+                        r->bsaArchives.push_back(std::move(arc));
+                    }
+                }
+            }
+            r->bsaOk = !r->bsaArchives.empty();
         }
         else {
             r->ok = false;
@@ -1545,8 +1888,10 @@ void MainWindow::OnLoadDone(LoadResult* r) {
     }
 
     m_text = std::move(r->text);
-        m_quests = std::move(r->quests);
-        m_questsLoaded = r->questsOk;
+    m_quests = std::move(r->quests);
+    m_questsLoaded = r->questsOk;
+    m_bsaArchives = std::move(r->bsaArchives);
+    m_bsaLoaded = r->bsaOk;
 
     PopulateTree();
 
@@ -1558,7 +1903,7 @@ void MainWindow::OnLoadDone(LoadResult* r) {
     DrawMenuBar(m_hwnd);
 
     wchar_t buf[512]{};
-    swprintf_s(buf, L"Loaded %zu records from %s", m_text.records.size(), m_text.sourcePath.wstring().c_str());
+    swprintf_s(buf, L"Loaded %zu records from %s (BSA archives: %zu)", m_text.records.size(), m_text.sourcePath.wstring().c_str(), m_bsaArchives.size());
     SetStatus(buf);
 
     m_loading.store(false);
@@ -1837,11 +2182,13 @@ void MainWindow::SaveIndicesOverrides() {
 }
 
 
-ui::MainWindow::TreePayload* MainWindow::AddPayload(TreePayload::Kind kind, uint16_t recId, size_t questIdx) {
+ui::MainWindow::TreePayload* MainWindow::AddPayload(TreePayload::Kind kind, uint16_t recId, size_t questIdx, size_t bsaArchiveIdx, size_t bsaEntryIdx) {
     auto p = std::make_unique<TreePayload>();
     p->kind = kind;
     p->textRecordId = recId;
     p->questIndex = questIdx;
+    p->bsaArchiveIndex = bsaArchiveIdx;
+    p->bsaEntryIndex = bsaEntryIdx;
     TreePayload* raw = p.get();
     m_treePayloads.push_back(std::move(p));
     return raw;
