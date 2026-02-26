@@ -1,0 +1,245 @@
+
+  Mod:Battlespire File Formats
+
+The UESPWiki – Your source for The Elder Scrolls, in memory of Julian LeFay
+< Mod <https://en.uesp.net/wiki/Mod:Main_Page>
+⧼monobook-jumptonavigation⧽ <#column-one>⧼monobook-jumptosearch⧽
+<#searchInput>
+An editor has requested for this article to be *peer reviewed* to
+receive a broader perspective on how it may be improved. Please make any
+edits as you see fit to help improve the quality of this article.
+
+This page contains information about the *files and file formats* of /
+Battlespire <https://en.uesp.net/wiki/Battlespire:Battlespire>/.
+
+
+Contents
+
+  * 1 Extracting BSAs <#Extracting_BSAs>
+  * 2 FLC.BSA <#FLC.BSA>
+  * 3 TXT.BSA Format <#TXT.BSA_Format>
+  * 4 WAVES.BSA <#WAVES.BSA>
+  * 5 Save Game Offset List <#Save_Game_Offset_List>
+  * 6 RAW File Format <#RAW_File_Format>
+
+
+    Extracting BSAs[edit <https://en.uesp.net/w/index.php?
+    title=Mod:Battlespire_File_Formats&action=edit&section=1>]
+
+The program Game Extractor by Watto may be used to extract files from /
+Battlespire/'s BSAs. Alternatively, battlespire-tools by Ariscop can
+also do that and more.
+
+
+    FLC.BSA[edit <https://en.uesp.net/w/index.php?
+    title=Mod:Battlespire_File_Formats&action=edit&section=2>]
+
+This contains the animation frames used in every conversation window.
+The files can be opened and edited with Aseprite. The files may have two
+extra bytes at the start of file for unknown reasons that may cause
+problems opening them. If this is the case, delete them with a hex editor.
+
+
+    TXT.BSA Format[edit <https://en.uesp.net/w/index.php?
+    title=Mod:Battlespire_File_Formats&action=edit&section=3>]
+
+Useful information, options, and formats gleaned from the TXT.BSA file
+configuration file are covered at TXT.BSA Format <https://en.uesp.net/
+wiki/Mod:TXT.BSA_Format>.
+
+
+    WAVES.BSA[edit <https://en.uesp.net/w/index.php?
+    title=Mod:Battlespire_File_Formats&action=edit&section=4>]
+
+This file is only found on /Battlespire/'s CD and is notably not present
+in the GOG release. It contains PCMs which are WAV files without the
+header. The correct header info that can be used to convert them to WAV
+is as follows:
+
+  * 8-bit unsigned
+  * little-endian
+  * mono
+  * 11025hz
+
+
+    Save Game Offset List[edit <https://en.uesp.net/w/index.php?
+    title=Mod:Battlespire_File_Formats&action=edit&section=5>]
+
+A partial list of save game offsets for the SAVETREE.DAT file are
+provided in Save Game Offset List <https://en.uesp.net/wiki/
+Mod:Battlespire_Save_Game_Offset_List>.
+
+
+    RAW File Format[edit <https://en.uesp.net/w/index.php?
+    title=Mod:Battlespire_File_Formats&action=edit&section=6>]
+
+The RAW screenshot files found in the PICS directory are simply the RGB
+components of each pixel in the 640x480 window (640x480x3 = 921,600
+bytes). Each color component is a byte ranging from 0 to 255 (which is
+in essence a 24-bit file even though /Battlespire/ is only a 15-bit game).
+
+Retrieved from "https://en.uesp.net/w/index.php?
+title=Mod:Battlespire_File_Formats&oldid=3370931 <https://en.uesp.net/w/
+index.php?title=Mod:Battlespire_File_Formats&oldid=3370931>"
+Category <https://en.uesp.net/wiki/Special:Categories>:
+
+  * Mod <https://en.uesp.net/wiki/Category:Mod>
+
+Hidden categories:
+
+  * Mod-Pages Needing Peer Review <https://en.uesp.net/wiki/
+    Category:Mod-Pages_Needing_Peer_Review>
+  * All Pages Needing Peer Review <https://en.uesp.net/wiki/
+    Category:All_Pages_Needing_Peer_Review>
+
+
+    Navigation menu
+
+
+monobook-cactions-label
+
+  * Mod <https://en.uesp.net/wiki/Mod:Battlespire_File_Formats>
+  * Discussion <https://en.uesp.net/wiki/Mod_talk:Battlespire_File_Formats>
+  * Edit <https://en.uesp.net/w/index.php?
+    title=Mod:Battlespire_File_Formats&action=edit>
+  * History <https://en.uesp.net/w/index.php?
+    title=Mod:Battlespire_File_Formats&action=history>
+  * Chat <https://en.uesp.net/wiki/UESPWiki:Discord>
+
+
+monobook-cactions-label
+
+  * Mod <https://en.uesp.net/wiki/Mod:Battlespire_File_Formats>
+  * Discussion <https://en.uesp.net/wiki/Mod_talk:Battlespire_File_Formats>
+  * ⧼monobook-more-actions⧽ <#p-cactions>
+  * Tools <#p-tb>
+
+
+Personal tools
+
+  * Not logged in
+  * Talk <https://en.uesp.net/wiki/Special:MyTalk>
+  * Contributions <https://en.uesp.net/wiki/Special:MyContributions>
+  * Create account <https://en.uesp.net/w/index.php?
+    title=Special:CreateAccount&returnto=Mod%3ABattlespire+File+Formats>
+  * Log in <https://en.uesp.net/w/index.php?
+    title=Special:UserLogin&returnto=Mod%3ABattlespire+File+Formats>
+
+<https://en.uesp.net/wiki/Main_Page>
+
+
+Search
+
+Search
+
+
+general
+
+  * Help <https://en.uesp.net/wiki/Help:Contents>
+  * How to Contribute <https://en.uesp.net/wiki/UESPWiki:Getting_Started>
+  * Recent Changes <https://en.uesp.net/wiki/Special:RecentChanges>
+  * Random Page <https://en.uesp.net/wiki/Special:Random>
+  * View Mobile Site <https://m.uesp.net/wikiredirect.php>
+  * Android App <https://uesp.app/>
+
+
+Content
+
+  * All Content <https://en.uesp.net/wiki/All_Content>
+  * Lore <https://en.uesp.net/wiki/Lore:Main_Page>
+  * General <https://en.uesp.net/wiki/General:Main_Page>
+  * Books <https://en.uesp.net/wiki/Books:Books>
+  * Merchandise <https://en.uesp.net/wiki/Merchandise:Main_Page>
+  * Mods <https://en.uesp.net/wiki/Mod:Main_Page>
+  * Elder Scrolls Online <https://en.uesp.net/wiki/Online:Online>
+  * Skyrim <https://en.uesp.net/wiki/Skyrim:Skyrim>
+  * Oblivion <https://en.uesp.net/wiki/Oblivion:Oblivion>
+  * Oblivion Remastered <https://en.uesp.net/wiki/
+    Oblivion:Oblivion_Remastered>
+  * Morrowind <https://en.uesp.net/wiki/Morrowind:Morrowind>
+  * Daggerfall <https://en.uesp.net/wiki/Daggerfall:Daggerfall>
+  * Arena <https://en.uesp.net/wiki/Arena:Arena>
+  * Castles <https://en.uesp.net/wiki/Castles:Castles>
+  * Blades <https://en.uesp.net/wiki/Blades:Blades>
+  * Legends <https://en.uesp.net/wiki/Legends:Legends>
+  * Travels <https://en.uesp.net/wiki/TES_Travels>
+  * Redguard <https://en.uesp.net/wiki/Redguard:Redguard>
+  * Battlespire <https://en.uesp.net/wiki/Battlespire:Battlespire>
+  * Betrayal of the 2nd Era <https://en.uesp.net/wiki/
+    Betrayal:Betrayal_of_the_Second_Era>
+  * Skyrim Adventure Game <https://en.uesp.net/wiki/SkyrimTAG:Skyrim_-
+    _The_Adventure_Game>
+  * Call to Arms <https://en.uesp.net/wiki/Call_to_Arms:Call_to_Arms>
+  * Skyrim Very Special <https://en.uesp.net/wiki/
+    SkyrimVSE:Skyrim_Very_Special_Edition>
+  * Skyrim Pinball <https://en.uesp.net/wiki/Pinball:Skyrim_Pinball>
+  * Featured Content <https://en.uesp.net/wiki/UESPWiki:Featured_Articles>
+
+
+Community
+
+  * Community Portal <https://en.uesp.net/wiki/UESPWiki:Community_Portal>
+  * Admin Noticeboard <https://en.uesp.net/wiki/
+    UESPWiki:Administrator_Noticeboard>
+  * Bluesky <https://bsky.app/profile/uesp.net>
+  * Discord <https://en.uesp.net/wiki/UESPWiki:Discord>
+      o Join Server <https://discord.gg/uesp>
+  * Facebook <https://www.facebook.com/UESP.net/>
+  * Instagram <https://www.instagram.com/unofficial_elder_scrolls_pages/>
+  * Mastodon <https://mstdn.ca/@uesp>
+  * Threads <https://www.threads.net/@unofficial_elder_scrolls_pages>
+  * Tumblr <https://uesp.tumblr.com/>
+  * Twitch <https://www.twitch.tv/uesp>
+  * X (Twitter) <https://twitter.com/UESP_net>
+  * YouTube <https://www.youtube.com/@UnofficialElderScrollsPages>
+  * Blog <https://blog.uesp.net/>
+  * Forums <https://forums.uesp.net/>
+  * Patreon <https://www.patreon.com/uesp>
+  * Hosted Wikis <https://en.uesp.net/wiki/UESPWiki:Hosted_Wikis>
+      o Starfield Wiki <https://starfieldwiki.net/>
+      o Oblivion CS Wiki <https://cs.uesp.net/>
+      o Skyrim CK Wiki <https://ck.uesp.net/wiki/Main_Page>
+      o Fallout 3 GECK Wiki <https://geck.uesp.net/>
+      o Fallout 4 CK Wiki <https://falloutck.uesp.net/>
+  * Affiliates <https://en.uesp.net/wiki/UESPWiki:Affiliates>
+  * Contact Us <https://en.uesp.net/wiki/UESPWiki:Contact>
+  * Links <https://en.uesp.net/wiki/General:Links>
+
+
+Tools
+
+  * What Links Here <https://en.uesp.net/wiki/Special:WhatLinksHere/
+    Mod:Battlespire_File_Formats>
+  * Related changes <https://en.uesp.net/wiki/
+    Special:RecentChangesLinked/Mod:Battlespire_File_Formats>
+  * Special Pages <https://en.uesp.net/wiki/Special:SpecialPages>
+  * Printable Version <https://en.uesp.net/w/index.php?
+    title=Mod:Battlespire_File_Formats&printable=yes>
+  * Permanent Link <https://en.uesp.net/w/index.php?
+    title=Mod:Battlespire_File_Formats&oldid=3370931>
+  * Page information <https://en.uesp.net/w/index.php?
+    title=Mod:Battlespire_File_Formats&action=info>
+  * Cite this page <https://en.uesp.net/w/index.php?
+    title=Special:CiteThisPage&page=Mod%3ABattlespire_File_Formats&id=3370931>
+
+<#sidebar><#p-personal><#globalWrapper>
+[Content is available under Attribution-ShareAlike] <https://
+en.uesp.net/wiki/UESPWiki:Copyright_and_Ownership>
+Powered by MediaWiki <https://www.mediawiki.org/>[Proudly Hosted by
+Twelve Worlds] <https://twelveworlds.net/>
+
+  * This page was last edited on 11 June 2025, at 13:22.
+  *
+
+    All content is available under the terms of the Attribution-
+    ShareAlike 2.5 License <https://en.uesp.net/wiki/
+    UESPWiki:Copyright_and_Ownership>.
+
+  * Privacy Policy <https://en.uesp.net/wiki/UESPWiki:Privacy_Policy>
+  * About UESPWiki <https://en.uesp.net/wiki/UESPWiki:About>
+  * Disclaimers <https://en.uesp.net/wiki/UESPWiki:General_Disclaimer>
+  * Mobile view <https://en.uesp.net/w/index.php?
+    title=Mod:Battlespire_File_Formats&mobileaction=toggle_view_mobile>
+  * Enable previews <#>
+
+<#>
