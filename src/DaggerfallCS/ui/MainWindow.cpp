@@ -956,12 +956,41 @@ void MainWindow::OnTreeSelChanged() {
 void MainWindow::CmdOpenSpire() {
     if (m_loading.load()) return;
 
-    auto folder = winutil::PickFolder(m_hwnd, L"Select Battlespire folder");
+    auto folder = winutil::PickFolder(m_hwnd, L"Select Battlespire folder (or game root containing GameData)");
     if (!folder) return;
 
-    std::wstring msg = L"Selected spire folder:\n" + folder->wstring();
-    MessageBoxW(m_hwnd, msg.c_str(), L"Open spire Folder", MB_OK | MB_ICONINFORMATION);
-    SetStatus(L"Opened spire folder selection.");
+    m_loading.store(true);
+    SetStatus(L"Loading Battlespire TEXT.RSC...");
+    SetCursor(LoadCursorW(nullptr, IDC_WAIT));
+
+    HMENU hMenu = GetMenu(m_hwnd);
+    EnableMenuItem(hMenu, IDM_FILE_OPEN_SPIRE, MF_BYCOMMAND | MF_GRAYED);
+    EnableMenuItem(hMenu, IDM_FILE_OPEN_ARENA2, MF_BYCOMMAND | MF_GRAYED);
+    EnableMenuItem(hMenu, IDM_EXPORT_SUBRECORDS, MF_BYCOMMAND | MF_GRAYED);
+    EnableMenuItem(hMenu, IDM_EXPORT_TOKENS, MF_BYCOMMAND | MF_GRAYED);
+    EnableMenuItem(hMenu, IDM_EXPORT_VARIABLES, MF_BYCOMMAND | MF_GRAYED);
+    EnableMenuItem(hMenu, IDM_EXPORT_QUESTS, MF_BYCOMMAND | MF_GRAYED);
+    EnableMenuItem(hMenu, IDM_EXPORT_QUEST_STAGES, MF_BYCOMMAND | MF_GRAYED);
+    DrawMenuBar(m_hwnd);
+
+    auto spirePath = *folder;
+    std::thread([hwnd = m_hwnd, spirePath]() {
+        auto* r = new LoadResult();
+        r->questsOk = false;
+
+        std::wstring err;
+        arena2::TextRsc loaded;
+        if (arena2::TextRsc::LoadFromBattlespireRoot(spirePath, loaded, &err)) {
+            r->ok = true;
+            r->text = std::move(loaded);
+        }
+        else {
+            r->ok = false;
+            r->err = err;
+        }
+
+        PostMessageW(hwnd, WM_APP_LOAD_DONE, (WPARAM)r, 0);
+    }).detach();
 }
 
 void MainWindow::CmdOpenArena2() {
@@ -1505,6 +1534,7 @@ void MainWindow::OnLoadDone(LoadResult* r) {
 
     HMENU hMenu = GetMenu(m_hwnd);
     EnableMenuItem(hMenu, IDM_FILE_OPEN_ARENA2, MF_BYCOMMAND | MF_ENABLED);
+    EnableMenuItem(hMenu, IDM_FILE_OPEN_SPIRE, MF_BYCOMMAND | MF_ENABLED);
     DrawMenuBar(m_hwnd);
 
     if (!r->ok) {
