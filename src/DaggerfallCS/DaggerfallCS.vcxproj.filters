@@ -37,6 +37,12 @@
     <Filter Include="Header Files\ui">
       <UniqueIdentifier>{1E8EE1F4-6E5A-4B1B-9F04-AB8A1C5F2A68}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\battlespire">
+      <UniqueIdentifier>{C1E6DA6C-0F28-4C2D-8C5A-3F3F6A8B5F79}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\battlespire">
+      <UniqueIdentifier>{F9EDEAE4-C5C0-49BE-98A7-C2D7A06A2CDE}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -72,6 +78,9 @@
     <ClCompile Include="ui\IndicesPrefsWindow.cpp">
       <Filter>Source Files\ui</Filter>
     </ClCompile>
+    <ClCompile Include="battlespire\BattlespireFormats.cpp">
+      <Filter>Source Files\battlespire</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -106,6 +115,9 @@
     </ClInclude>
     <ClInclude Include="ui\IndicesPrefsWindow.h">
       <Filter>Header Files\ui</Filter>
+    </ClInclude>
+    <ClInclude Include="battlespire\BattlespireFormats.h">
+      <Filter>Header Files\battlespire</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
