@@ -4,6 +4,7 @@
 #include "../util/WinUtil.h"
 #include "../export/CsvWriter.h"
 #include "../arena2/QuestOpcodeDisasm.h"
+#include "../battlespire/BattlespireFormats.h"
 
 namespace ui {
 
@@ -13,9 +14,12 @@ struct MainWindow::LoadResult {
     arena2::TextRsc text;
     arena2::QuestCatalog quests;
     bool questsOk{ false };
+    std::vector<battlespire::BsaArchive> bsaArchives;
+    bool bsaOk{ false };
 };
 
 static const wchar_t* kWndClass = L"DaggerfallCS_MainWindow";
+static std::wstring HexU32(uint32_t v);
 
 static std::wstring ToLowerCopy(std::wstring s) {
     for (auto& c : s) c = (wchar_t)towlower(c);
@@ -125,6 +129,46 @@ static std::wstring CompactLine(std::wstring s) {
 
     while (!out.empty() && out.front() == L' ') out.erase(out.begin());
     while (!out.empty() && out.back() == L' ') out.pop_back();
+    return out;
+}
+
+
+static bool IsLikelyUtf8Printable(const std::vector<uint8_t>& bytes) {
+    if (bytes.empty()) return true;
+    size_t printable = 0;
+    size_t control = 0;
+    size_t sample = std::min<size_t>(bytes.size(), 4096);
+    for (size_t i = 0; i < sample; ++i) {
+        uint8_t b = bytes[i];
+        if (b == 9 || b == 10 || b == 13) { printable++; continue; }
+        if (b >= 32 && b < 127) printable++;
+        else if (b < 32) control++;
+        else printable++;
+    }
+    return control * 8 < sample;
+}
+
+static std::wstring HexDumpPreview(const std::vector<uint8_t>& bytes, size_t maxBytes = 256) {
+    std::wstring out;
+    size_t n = std::min(bytes.size(), maxBytes);
+    wchar_t line[128]{};
+    for (size_t i = 0; i < n; i += 16) {
+        swprintf_s(line, L"%08X: ", (unsigned)i);
+        out += line;
+        for (size_t j = 0; j < 16; ++j) {
+            if (i + j < n) {
+                swprintf_s(line, L"%02X ", (unsigned)bytes[i + j]);
+                out += line;
+            } else out += L"   ";
+        }
+        out += L" |";
+        for (size_t j = 0; j < 16 && i + j < n; ++j) {
+            wchar_t c = (bytes[i + j] >= 32 && bytes[i + j] < 127) ? (wchar_t)bytes[i + j] : L'.';
+            out.push_back(c);
+        }
+        out += L"|\r\n";
+    }
+    if (bytes.size() > n) out += L"...\r\n";
     return out;
 }
 
@@ -349,7 +393,7 @@ void MainWindow::OnCommand(WORD id) {
     case IDM_EXPORT_QUEST_STAGES: CmdExportQuestStages(); break;
     case IDM_EXPORT_TES4_QD: CmdExportTes4QuestDialogue(); break;
     case IDM_HELP_ABOUT:
-        MessageBoxW(m_hwnd, L"Daggerfall-CS MVP\n\nLoads ARENA2\\TEXT.RSC and exports CSV.", L"About", MB_OK | MB_ICONINFORMATION);
+        MessageBoxW(m_hwnd, L"Daggerfall-CS MVP\n\nLoads TEXT.RSC and Battlespire BSA resources and exports CSV.", L"About", MB_OK | MB_ICONINFORMATION);
         break;
     default: break;
     }
@@ -372,6 +416,7 @@ void MainWindow::StartTreeBuild() {
     m_treeInsertPos = 0;
     m_treeRootText = nullptr;
     m_treeRootQuests = nullptr;
+    m_treeRootBsa = nullptr;
     m_treePayloads.clear();
     m_pendingQuestIdx.clear();
     m_pendingQuestParents.clear();
@@ -419,6 +464,47 @@ void MainWindow::StartTreeBuild() {
         TreeView_SetItem(m_tree, &ti);
     }
 
+    // BSA root (Battlespire)
+    ins.item.pszText = const_cast<wchar_t*>(L"BSA Archives");
+    m_treeRootBsa = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&ins);
+    if (m_treeRootBsa) {
+        auto* pr = AddPayload(TreePayload::Kind::BsaRoot);
+        TVITEMW ti{};
+        ti.mask = TVIF_PARAM | TVIF_HANDLE;
+        ti.hItem = m_treeRootBsa;
+        ti.lParam = (LPARAM)pr;
+        TreeView_SetItem(m_tree, &ti);
+
+        for (size_t ai = 0; ai < m_bsaArchives.size(); ++ai) {
+            const auto& a = m_bsaArchives[ai];
+            std::wstring aname = a.sourcePath.filename().wstring();
+            aname += L" (" + std::to_wstring(a.entries.size()) + L" entries)";
+
+            TVINSERTSTRUCTW ains{};
+            ains.hParent = m_treeRootBsa;
+            ains.hInsertAfter = TVI_LAST;
+            ains.item.mask = TVIF_TEXT | TVIF_PARAM;
+            ains.item.pszText = const_cast<wchar_t*>(aname.c_str());
+            ains.item.lParam = (LPARAM)AddPayload(TreePayload::Kind::BsaArchive, 0, (size_t)-1, ai, (size_t)-1);
+            HTREEITEM ah = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&ains);
+
+            for (size_t ei = 0; ei < a.entries.size(); ++ei) {
+                const auto& e = a.entries[ei];
+                std::wstring label = winutil::WidenUtf8(e.name);
+                wchar_t suffix[96]{};
+                swprintf_s(suffix, L"  [off=0x%X, size=%u%s]", (unsigned)e.offset, (unsigned)e.packedSize, e.compressionFlag ? L", cmp" : L"");
+                label += suffix;
+
+                TVINSERTSTRUCTW eins{};
+                eins.hParent = ah;
+                eins.hInsertAfter = TVI_LAST;
+                eins.item.mask = TVIF_TEXT | TVIF_PARAM;
+                eins.item.pszText = const_cast<wchar_t*>(label.c_str());
+                eins.item.lParam = (LPARAM)AddPayload(TreePayload::Kind::BsaEntry, 0, (size_t)-1, ai, ei);
+                SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&eins);
+            }
+        }
+    }
 
     struct Bucket { std::wstring label; std::vector<uint16_t> ids; };
     std::vector<Bucket> buckets;
@@ -680,6 +766,7 @@ void MainWindow::TreeBuildTick() {
     KillTimer(m_hwnd, TIMER_POP_TREE);
     TreeView_Expand(m_tree, m_treeRootText, TVE_EXPAND);
     TreeView_Expand(m_tree, m_treeRootQuests, TVE_EXPAND);
+    TreeView_Expand(m_tree, m_treeRootBsa, TVE_EXPAND);
 
     SetStatus(L"Ready.");
 }
@@ -946,6 +1033,50 @@ void MainWindow::OnTreeSelChanged() {
         return;
     }
 
+    if (p->kind == TreePayload::Kind::BsaEntry) {
+        SetupListColumns_TextSubrecords();
+        ListView_DeleteAllItems(m_list);
+
+        if (p->bsaArchiveIndex >= m_bsaArchives.size()) return;
+        const auto& ar = m_bsaArchives[p->bsaArchiveIndex];
+        if (p->bsaEntryIndex >= ar.entries.size()) return;
+        const auto& e = ar.entries[p->bsaEntryIndex];
+
+        std::vector<uint8_t> bytes;
+        std::wstring err;
+        if (!ar.ReadEntryData(e, bytes, &err)) {
+            SetWindowTextW(m_preview, (L"Failed to decode BSA entry: " + err).c_str());
+            return;
+        }
+
+        auto addRow = [&](int idx, const std::wstring& text) {
+            LVITEMW it{};
+            it.mask = LVIF_TEXT;
+            it.iItem = idx;
+            std::wstring i = std::to_wstring(idx);
+            it.pszText = const_cast<wchar_t*>(i.c_str());
+            ListView_InsertItem(m_list, &it);
+            ListView_SetItemText(m_list, idx, 1, const_cast<wchar_t*>(text.c_str()));
+        };
+        addRow(0, L"Name: " + winutil::WidenUtf8(e.name));
+        addRow(1, L"Offset: 0x" + HexU32(e.offset));
+        addRow(2, L"Packed Size: " + std::to_wstring(e.packedSize));
+        addRow(3, L"Compression Flag: " + std::to_wstring(e.compressionFlag));
+        addRow(4, L"Decoded Size: " + std::to_wstring(bytes.size()));
+
+        std::wstring preview;
+        if (IsLikelyUtf8Printable(bytes)) {
+            std::string text(bytes.begin(), bytes.end());
+            if (text.size() > 8192) text.resize(8192);
+            preview = winutil::WidenUtf8(text);
+        } else {
+            preview = HexDumpPreview(bytes);
+        }
+        SetWindowTextW(m_preview, preview.c_str());
+        m_viewMode = ViewMode::BsaEntry;
+        return;
+    }
+
     // Root/group nodes
     ShowQuestView(false);
     ListView_DeleteAllItems(m_list);
@@ -1001,6 +1132,28 @@ void MainWindow::CmdOpenSpire() {
             } else {
                 r->questsOk = false;
             }
+
+            // Auto-discover and load Battlespire BSA archives for browsing.
+            std::vector<std::filesystem::path> roots = { spirePath, spirePath / L"GameData" };
+            std::unordered_set<std::wstring> seen;
+            for (const auto& root : roots) {
+                if (!std::filesystem::exists(root) || !std::filesystem::is_directory(root)) continue;
+                for (auto& it : std::filesystem::directory_iterator(root)) {
+                    if (!it.is_regular_file()) continue;
+                    auto ext = it.path().extension().wstring();
+                    for (auto& c : ext) c = (wchar_t)towupper(c);
+                    if (ext != L".BSA") continue;
+                    auto canon = it.path().wstring();
+                    if (!seen.insert(canon).second) continue;
+
+                    battlespire::BsaArchive arc;
+                    std::wstring berr;
+                    if (battlespire::BsaArchive::LoadFromFile(it.path(), arc, &berr)) {
+                        r->bsaArchives.push_back(std::move(arc));
+                    }
+                }
+            }
+            r->bsaOk = !r->bsaArchives.empty();
         }
         else {
             r->ok = false;
@@ -1563,8 +1716,10 @@ void MainWindow::OnLoadDone(LoadResult* r) {
     }
 
     m_text = std::move(r->text);
-        m_quests = std::move(r->quests);
-        m_questsLoaded = r->questsOk;
+    m_quests = std::move(r->quests);
+    m_questsLoaded = r->questsOk;
+    m_bsaArchives = std::move(r->bsaArchives);
+    m_bsaLoaded = r->bsaOk;
 
     PopulateTree();
 
@@ -1576,7 +1731,7 @@ void MainWindow::OnLoadDone(LoadResult* r) {
     DrawMenuBar(m_hwnd);
 
     wchar_t buf[512]{};
-    swprintf_s(buf, L"Loaded %zu records from %s", m_text.records.size(), m_text.sourcePath.wstring().c_str());
+    swprintf_s(buf, L"Loaded %zu records from %s (BSA archives: %zu)", m_text.records.size(), m_text.sourcePath.wstring().c_str(), m_bsaArchives.size());
     SetStatus(buf);
 
     m_loading.store(false);
@@ -1855,11 +2010,13 @@ void MainWindow::SaveIndicesOverrides() {
 }
 
 
-ui::MainWindow::TreePayload* MainWindow::AddPayload(TreePayload::Kind kind, uint16_t recId, size_t questIdx) {
+ui::MainWindow::TreePayload* MainWindow::AddPayload(TreePayload::Kind kind, uint16_t recId, size_t questIdx, size_t bsaArchiveIdx, size_t bsaEntryIdx) {
     auto p = std::make_unique<TreePayload>();
     p->kind = kind;
     p->textRecordId = recId;
     p->questIndex = questIdx;
+    p->bsaArchiveIndex = bsaArchiveIdx;
+    p->bsaEntryIndex = bsaEntryIdx;
     TreePayload* raw = p.get();
     m_treePayloads.push_back(std::move(p));
     return raw;
