@@ -172,6 +172,55 @@ static std::wstring HexDumpPreview(const std::vector<uint8_t>& bytes, size_t max
     return out;
 }
 
+
+static std::wstring TrimWs(std::wstring v) {
+    auto issp = [](wchar_t c) { return c == L' ' || c == L'\t' || c == L'\r' || c == L'\n'; };
+    while (!v.empty() && issp(v.front())) v.erase(v.begin());
+    while (!v.empty() && issp(v.back())) v.pop_back();
+    return v;
+}
+
+static std::wstring ToLowerWs(std::wstring v) {
+    for (auto& c : v) c = (wchar_t)towlower(c);
+    return v;
+}
+
+static bool EndsWithWs(const std::wstring& s, const wchar_t* suffix) {
+    size_t n = wcslen(suffix);
+    if (s.size() < n) return false;
+    return _wcsicmp(s.c_str() + (s.size() - n), suffix) == 0;
+}
+
+static std::vector<std::vector<std::wstring>> ParseTabLines(const std::wstring& text) {
+    std::vector<std::vector<std::wstring>> rows;
+    size_t start = 0;
+    while (start <= text.size()) {
+        size_t end = text.find(L'\n', start);
+        std::wstring line = (end == std::wstring::npos) ? text.substr(start) : text.substr(start, end - start);
+        if (!line.empty() && line.back() == L'\r') line.pop_back();
+
+        std::vector<std::wstring> cols;
+        size_t cstart = 0;
+        while (cstart <= line.size()) {
+            size_t cend = line.find(L'\t', cstart);
+            std::wstring cell = (cend == std::wstring::npos) ? line.substr(cstart) : line.substr(cstart, cend - cstart);
+            cols.push_back(TrimWs(std::move(cell)));
+            if (cend == std::wstring::npos) break;
+            cstart = cend + 1;
+        }
+
+        bool any = false;
+        for (const auto& c : cols) {
+            if (!c.empty()) { any = true; break; }
+        }
+        if (any) rows.push_back(std::move(cols));
+
+        if (end == std::wstring::npos) break;
+        start = end + 1;
+    }
+    return rows;
+}
+
 static std::wstring DeriveBookTitle(arena2::TextRecord& rec, const std::vector<uint8_t>& fileBytes, std::wstring_view indexLabel) {
     std::wstring label(indexLabel);
     std::wstring labelLow = ToLowerCopy(label);
@@ -257,6 +306,7 @@ static HMENU BuildMenuBar() {
 
     AppendMenuW(hFile, MF_STRING, IDM_FILE_OPEN_ARENA2, L"Open ARENA2 Folder...");
     AppendMenuW(hFile, MF_STRING, IDM_FILE_OPEN_SPIRE, L"Open spire Folder...");
+    AppendMenuW(hFile, MF_STRING, IDM_FILE_EXTRACT_BSA, L"Extract BSA...");
     AppendMenuW(hFile, MF_STRING, IDM_FILE_INDICES, L"Indices...");
     AppendMenuW(hFile, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(hFile, MF_STRING, IDM_FILE_EXIT, L"Exit");
@@ -380,6 +430,7 @@ void MainWindow::OnCommand(WORD id) {
     switch (id) {
     case IDM_FILE_OPEN_ARENA2: CmdOpenArena2(); break;
     case IDM_FILE_OPEN_SPIRE: CmdOpenSpire(); break;
+    case IDM_FILE_EXTRACT_BSA: CmdExtractBsa(); break;
     case IDM_FILE_INDICES:
         if (!m_indicesWnd.IsOpen()) m_indicesWnd.Create(GetModuleHandleW(nullptr), m_hwnd, this);
         m_indicesWnd.Refresh();
@@ -1049,29 +1100,93 @@ void MainWindow::OnTreeSelChanged() {
             return;
         }
 
-        auto addRow = [&](int idx, const std::wstring& text) {
-            LVITEMW it{};
-            it.mask = LVIF_TEXT;
-            it.iItem = idx;
-            std::wstring i = std::to_wstring(idx);
-            it.pszText = const_cast<wchar_t*>(i.c_str());
-            ListView_InsertItem(m_list, &it);
-            ListView_SetItemText(m_list, idx, 1, const_cast<wchar_t*>(text.c_str()));
-        };
-        addRow(0, L"Name: " + winutil::WidenUtf8(e.name));
-        addRow(1, L"Offset: 0x" + HexU32(e.offset));
-        addRow(2, L"Packed Size: " + std::to_wstring(e.packedSize));
-        addRow(3, L"Compression Flag: " + std::to_wstring(e.compressionFlag));
-        addRow(4, L"Decoded Size: " + std::to_wstring(bytes.size()));
-
         std::wstring preview;
+        bool renderedTable = false;
         if (IsLikelyUtf8Printable(bytes)) {
             std::string text(bytes.begin(), bytes.end());
-            if (text.size() > 8192) text.resize(8192);
+            if (text.size() > 131072) text.resize(131072);
             preview = winutil::WidenUtf8(text);
+
+            std::wstring nameLow = ToLowerWs(winutil::WidenUtf8(e.name));
+            bool tableLikeExt = EndsWithWs(nameLow, L".xls") || EndsWithWs(nameLow, L".txt") || EndsWithWs(nameLow, L".csv");
+            if (tableLikeExt && preview.find(L'	') != std::wstring::npos) {
+                auto rows = ParseTabLines(preview);
+                if (rows.size() >= 2) {
+                    size_t maxCols = 0;
+                    for (const auto& r : rows) maxCols = std::max(maxCols, r.size());
+                    if (maxCols >= 3) {
+                        // Try to find explicit dialogue headers (Saycode, NPC SAY, Replycode...), otherwise use densest row.
+                        size_t headerRow = 0;
+                        size_t bestScore = 0;
+                        for (size_t ri = 0; ri < rows.size(); ++ri) {
+                            size_t nonEmpty = 0;
+                            bool hasSaycode = false;
+                            for (const auto& c : rows[ri]) {
+                                if (!c.empty()) nonEmpty++;
+                                if (ToLowerWs(c) == L"saycode") hasSaycode = true;
+                            }
+                            size_t score = nonEmpty + (hasSaycode ? 100 : 0);
+                            if (score > bestScore) { bestScore = score; headerRow = ri; }
+                        }
+
+                        while (ListView_DeleteColumn(m_list, 0)) {}
+                        LVCOLUMNW c{};
+                        c.mask = LVCF_TEXT | LVCF_WIDTH;
+                        for (size_t ci = 0; ci < maxCols; ++ci) {
+                            std::wstring hn = (ci < rows[headerRow].size() && !rows[headerRow][ci].empty()) ? rows[headerRow][ci] : (L"Col" + std::to_wstring(ci + 1));
+                            c.cx = (ci == 0) ? 120 : 220;
+                            c.pszText = const_cast<wchar_t*>(hn.c_str());
+                            ListView_InsertColumn(m_list, (int)ci, &c);
+                        }
+
+                        ListView_DeleteAllItems(m_list);
+                        int outRow = 0;
+                        for (size_t ri = headerRow + 1; ri < rows.size(); ++ri) {
+                            bool any = false;
+                            for (const auto& cell : rows[ri]) if (!cell.empty()) { any = true; break; }
+                            if (!any) continue;
+
+                            LVITEMW it{};
+                            it.mask = LVIF_TEXT;
+                            it.iItem = outRow;
+                            std::wstring first = (rows[ri].empty() ? L"" : rows[ri][0]);
+                            it.pszText = const_cast<wchar_t*>(first.c_str());
+                            ListView_InsertItem(m_list, &it);
+                            for (size_t ci = 1; ci < maxCols; ++ci) {
+                                std::wstring cell = (ci < rows[ri].size()) ? rows[ri][ci] : L"";
+                                ListView_SetItemText(m_list, outRow, (int)ci, const_cast<wchar_t*>(cell.c_str()));
+                            }
+                            outRow++;
+                            if (outRow > 4000) break;
+                        }
+
+                        renderedTable = (outRow > 0);
+                    }
+                }
+            }
         } else {
             preview = HexDumpPreview(bytes);
         }
+
+        if (!renderedTable) {
+            SetupListColumns_TextSubrecords();
+            ListView_DeleteAllItems(m_list);
+            auto addRow = [&](int idx, const std::wstring& text) {
+                LVITEMW it{};
+                it.mask = LVIF_TEXT;
+                it.iItem = idx;
+                std::wstring i = std::to_wstring(idx);
+                it.pszText = const_cast<wchar_t*>(i.c_str());
+                ListView_InsertItem(m_list, &it);
+                ListView_SetItemText(m_list, idx, 1, const_cast<wchar_t*>(text.c_str()));
+            };
+            addRow(0, L"Name: " + winutil::WidenUtf8(e.name));
+            addRow(1, L"Offset: 0x" + HexU32(e.offset));
+            addRow(2, L"Packed Size: " + std::to_wstring(e.packedSize));
+            addRow(3, L"Compression Flag: " + std::to_wstring(e.compressionFlag));
+            addRow(4, L"Decoded Size: " + std::to_wstring(bytes.size()));
+        }
+
         SetWindowTextW(m_preview, preview.c_str());
         m_viewMode = ViewMode::BsaEntry;
         return;
@@ -1083,6 +1198,63 @@ void MainWindow::OnTreeSelChanged() {
     SetWindowTextW(m_preview, L"");
 }
 
+
+
+void MainWindow::CmdExtractBsa() {
+    auto picked = winutil::PickFile(m_hwnd,
+        L"Select Battlespire BSA to extract",
+        L"Battlespire Archives (*.bsa)|*.bsa|All Files (*.*)|*.*");
+    if (!picked) return;
+
+    std::filesystem::path bsaPath = *picked;
+    battlespire::BsaArchive archive;
+    std::wstring err;
+    if (!battlespire::BsaArchive::LoadFromFile(bsaPath, archive, &err)) {
+        MessageBoxW(m_hwnd, (L"Failed to open BSA: " + err).c_str(), L"Extract BSA", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    std::filesystem::path outRoot = winutil::GetExeDirectory();
+    std::filesystem::path outDir = outRoot / (bsaPath.stem().wstring() + L"_extracted");
+
+    std::error_code ec;
+    std::filesystem::create_directories(outDir, ec);
+    if (ec) {
+        MessageBoxW(m_hwnd, (L"Failed to create output folder: " + outDir.wstring()).c_str(), L"Extract BSA", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    size_t okCount = 0;
+    size_t failCount = 0;
+    for (size_t i = 0; i < archive.entries.size(); ++i) {
+        const auto& e = archive.entries[i];
+
+        std::vector<uint8_t> bytes;
+        std::wstring derr;
+        if (!archive.ReadEntryData(e, bytes, &derr)) {
+            failCount++;
+            continue;
+        }
+
+        std::wstring name = winutil::WidenUtf8(e.name);
+        if (name.empty()) name = L"entry_" + std::to_wstring(i);
+        for (auto& c : name) {
+            if (c == L'/' || c == L'\\' || c == L':' || c == L'*' || c == L'?' || c == L'"' || c == L'<' || c == L'>' || c == L'|') c = L'_';
+        }
+
+        std::filesystem::path outPath = outDir / name;
+        std::ofstream f(outPath, std::ios::binary);
+        if (!f) { failCount++; continue; }
+        if (!bytes.empty()) f.write(reinterpret_cast<const char*>(bytes.data()), (std::streamsize)bytes.size());
+        if (!f.good()) { failCount++; continue; }
+        okCount++;
+    }
+
+    std::wstring msg = L"Extracted " + std::to_wstring(okCount) + L" entries to:\n" + outDir.wstring();
+    if (failCount) msg += L"\n\nFailed entries: " + std::to_wstring(failCount);
+    MessageBoxW(m_hwnd, msg.c_str(), L"Extract BSA", MB_OK | (failCount ? MB_ICONWARNING : MB_ICONINFORMATION));
+    SetStatus(L"BSA extraction complete: " + std::to_wstring(okCount) + L" files");
+}
 
 void MainWindow::CmdOpenSpire() {
     if (m_loading.load()) return;
