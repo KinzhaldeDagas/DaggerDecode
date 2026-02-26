@@ -175,6 +175,7 @@
     <ClInclude Include="arena2\VarHashCatalog.h" />
     <ClInclude Include="arena2\QuestQbn.h" />
     <ClInclude Include="arena2\QuestCatalog.h" />
+    <ClInclude Include="battlespire\BattlespireFormats.h" />
     <ClInclude Include="export\CsvWriter.h" />
     <ClInclude Include="util\WinUtil.h" />
     <ClInclude Include="ui\MainWindow.h" />
@@ -193,6 +194,7 @@
     <ClCompile Include="arena2\VarHashCatalog.cpp" />
     <ClCompile Include="arena2\QuestQbn.cpp" />
     <ClCompile Include="arena2\QuestCatalog.cpp" />
+    <ClCompile Include="battlespire\BattlespireFormats.cpp" />
     <ClCompile Include="export\CsvWriter.cpp" />
     <ClCompile Include="util\WinUtil.cpp" />
     <ClCompile Include="ui\MainWindow.cpp" />
