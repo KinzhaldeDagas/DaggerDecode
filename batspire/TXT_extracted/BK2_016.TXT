@@ -1,0 +1,48 @@
+Codex Arcana, Volume IV
+
+STUDENTS AND SCHOLAR: Attend our Abjurations!$
+SHOWING DUE PROPRIETY IN THE CUSTODY OF BOOKS$
+
+We not only render service to the Emperor in preparing volumes of new books, but also exercise an office of sacred piety when we treat books carefully, and again when we restore them to their proper places and commend them to inviolable custody; that they may rejoice in purity while we have them in our hands, and rest securely when they are restored to their repositories.  And surely next to the vestments and engines dedicated to the Emperor's glory, arcane books deserve to be rightly treated by the battlemage, to which great injury is done so often as they are touched by unclean hands.  Wherefore we deem it expedient to warn our students against various negligences, such as might be easily avoided and which do wonderful harm to books.$
+
+Being a continuance of a partial index of arcane contrivances known to the scholars and alchemists of Battlespire, that these contrivances might more readily be known to all students, and neither abused, nor neglected, nor wasted in their employment.$
+$
+"Tale of the Whole Flesh"$
+Casts the spell of Major Cure Health$
+$
+"Tear of Despair"$
+Produces the casting of Major Continuous Damage to the victim$
+$
+"Thimble of Magefire"$
+Produces the casting of Minor Magic Damage Range$
+$
+"Thread of Sparking"$
+Renders the power of Minor Shock Damage Range$
+$
+"Tides of the Between"$
+Produces the casting of Teleport$
+$
+"Tinct of the Apprentice"$
+Produces the casting of Minor Poison Damage $
+$
+"Waft of Lightness"$
+Produces the casting of Jumping$
+$
+"Web of the Master"$
+Renders the power of Major Poison Damage $
+$
+"Whim of the Grand Warding"$
+Renders the power of Resistance to All elements$
+$
+"Wind of Swiftness"$
+Renders the power of Running$
+$
+"Winds of Storm"$
+Produces the casting of Medium Shock Damage Range$
+$
+"Wing of Spellshifting"$
+Casts the spell of Spell Reflection$
+$
+"Withy of Withering"$
+Casts the spell of Minor Continuous Damage to the victim$
+

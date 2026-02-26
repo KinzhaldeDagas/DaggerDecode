@@ -1,0 +1,289 @@
+#0000
+This spell will summon a monster at random roughly equivalent in
+level to the caster. The monster will appear near the caster and will
+attack any creatures in the area except for the caster.
+
+#0001
+Use this spell to detect any delayed spell and also any spell cast by
+anybody in the vicinity of the caster.
+
+#0002
+When this spell is operational it will point out the nearest monster
+to the caster. This includes other player in multiplayer mode.
+
+#0003
+Using this spell allows the caster to see invisible objects without
+difficulty.
+
+#0004
+This will turn the caster invisible for a specific duration or until
+he attacks somebody.
+
+#0005
+The effects of this spell serve to change the caster into shadow. The
+caster will still be marginally visible in brightly lit areas but
+almost totally invisible in near darkness.
+
+#0006
+This causes the caster to blend with his surroundings making him very
+hard to spot. The caster will cause a slight distortion to the
+background.
+
+#0007
+By changing the weight of the character he will fall as light and as
+slow as a feather preventing him from taking damage from any fall.
+
+#0008
+The recipient of this spell will take periodic damage for the
+duration of the spell.
+
+#0009
+This injects a potent poison into the victim. This poison is not
+magical and cannot be removed by dispel magic.
+
+#0010
+This will make the controls work erratically for the unfortunate
+recipient for the duration of the spell.
+
+#0011
+While not only draining the target it will actually transfer whatever
+was drained to the caster.
+
+#0012
+This is your basic magical mine. This will stay where it was left for
+a period of time or until someone trips it taking damage.
+
+#0013
+This will bring up a list of all spells active on the caster and in
+the immediate vicinity, including other players, and allows the
+caster to terminatye any single spell from that list.
+
+#0014
+
+
+#1000
+I rise above the roofs below^
+Finger up-raised to heaven.^
+I speak in clear tones^
+That aim for others^
+To gather where I call.^
+
+#1001
+bell tower, tower, steeple, bell towers, towers, steeples, church tower, temple, shrine
+
+#1002
+Armor bright^
+Gleaming white^
+A single rank^
+Their faces blank^
+Now hid by night^
+Now bold by light^
+Bright red the land^
+Where soldiers stand^
+
+#1003
+teeth, tooth, mouth, tongue
+
+#1004
+Loadbearer, Warrior^
+Spirited, Brave^
+Fleet-foot, Ironshod^
+Faithful One, Slave^
+
+#1005
+Horse, horses, pony, ponies, steed, destrier, courser
+
+#1006
+Some live in me, some live on, ^
+And some shave me to stride upon. ^
+I rarely leave my native land. ^
+Until my death I always stand. ^
+High and low I may be found^
+Both above and under ground.
+
+#1007
+Tree, trees, tree trunk, trunk, wood, timber
+
+#1008
+So dark, dirty, cold this place,
+To stay you would refrain
+Yet those who occupy this place
+Never do complain
+
+#1009
+grave, tomb, crypt
+
+#1010
+The gift your mother gives you,
+Though prized by all, the long and short of it,
+Too much of it kills you every time.
+
+#1011
+Life, breath, breathing, living
+
+#1012
+What was the sight my eyes were giving
+When I saw the dead carrying the living?
+
+#1013
+a ship, boat, rowboat, craft, vessel, skiff, dinghy
+
+#1014
+We say some things improve with death.
+What stinks when living, but dead smells good?
+
+#1015
+Pig, hog, swine
+
+#1016
+Who makes it neither needs nor wants it.
+Who buys it neither uses nor wears it.
+Who uses it neither sees nor feels it.
+
+#1017
+Coffin, casket
+
+#1018
+[[A stained glass window depicts, to one side, many people laboring hard, burdened with great loads, and suffering the agonies of war and death. On the other side the people put down their burdens and are transfigured by a blazing green light which strips them of their tattered soiled garments and leaves them in a perfect splendor of body and spirit. Beneath the window is a simple inscription:]]
+
+THE SOUL CAIRN^
+Once they struggled, hammered, cried^
+Fought for justice, honor, pride.^
+Now from time and tide released^
+They guard and serve in silent peace^
+
+#1019
+[[A lengthy inscription identifies one of the Master's retainers who came to the Soul Cairn to die and be reborn in his Eternal Service.]]
+
+#1020
+[[Etched into a metal plate are the images of five coffins. Beneath each coffin image is a short verse or epigram. On the lid of the each coffin is a single word.]]
+
+
+[[beneath the first coffin:]]
+
+So dark, dirty, cold this place,
+To stay you would refrain
+Yet those who occupy this place
+Never do complain
+
+[[marking the lid of  the first coffin:]]
+GRAVE
+
+
+[[beneath the second coffin:]]
+
+The gift your mother gives you,
+Though prized by all, the long and short of it,
+Too much of it kills you every time.
+
+[[marking the lid of the second coffin:]]
+LIFE
+
+
+[[beneath the third coffin:]]
+What was the sight my eyes were giving
+When I saw the dead carrying the living?
+
+[[marking the lid of the third coffin:]]
+BOAT
+
+
+[[beneath the fourth coffin:]]
+We say some things improve with death.
+What stinks when living, but dead smells good?
+
+[[marking the lid of the fourth coffin:]]
+PIG
+
+
+[[beneath the fifth coffin:]]
+Who makes it neither needs nor wants it.
+Who buys it neither uses nor wears it.
+Who uses it neither sees nor feels it.
+
+[[marking the lid of the fifth coffin:]]
+COFFIN
+
+#1021
+Sacred honor, loyal love, eternal service.
+
+#1022
+The Soul Serves that Never Dies
+The Saint that Saved Us All
+
+#1023
+Genius and Power passes.
+Peace and Constance triumphs.
+
+#1024
+Shift my oars and wherry,
+For I shall pass over
+In the company of friends and lovers.
+
+#1025
+Thus do I cheat the worms of their unjust plunder.
+
+#1026
+I was, and wasn't, and was again forever.
+
+#1027
+Neither prophet nor profit, we pass empty-handed into the light.
+
+#1028
+In these worlds beyond the sun no darkness hides the distant shore.
+
+#1029
+We have done, and do, and will do.
+The gentle flowers of the sun doth triumph o'er the grave.
+
+#1030
+Poor Alex...
+   exported from this life.
+
+#1031
+Disco Pig
+   gave up the ghost.
+
+#1032
+Say your destination. Speak and be certain, for error is fatal.
+
+#1033
+Shade Perilous
+
+#1034
+Good work! The Battlespire is destroyed. On the plus side, it can no longer be used by the Daedra for their own foul ends. On the minus side, both it and you are now doomed to drift endlessly through the cold, dark void where there is nothing much to do, or eat, or anything, except die a long and lingering death. Would you like to try again?
+
+#1035
+Unfortunately you languish in a dungeon, forgotten and ignored, with the dubious consolation that your substance will nourish the squeaking, long-tailed vermin who are your final companions.
+
+#1036
+True to her word, Faydra Shardai makes your substance proof against time, which means you will be conscious through the eternity of torment she has planned for you. And your rewards indeed are no less than those of the boldest of her lieutenants - the bold lieutenants who dare to challenge her authority, the bold lieutenants who share your never-ending misery and despair. 
+
+#1037
+On the indispensable Anchors and the absolute need of their perpetual preservation.
+For the edification and admonition of all that should pass through this hall. 
+Know that this is one of the five great Anchors that moor the Battlespire in its place and retain it in the life-flood of sustaining Mana, without which there would be no light, no life, no Being. 
+In their o'er-reaching wisdom, the Administration has required me, against my every protest and complaint, to affix to it a dreadful device, which you see before you, whose purpose is to sunder and divide this anchor and imperil the Spire and all who inhabit it.
+
+Never divide the Anchor. It is the rock upon which all our lives are founded. All Anchors must be conjoined to assure the safety and stability of the Spire.
+
+Above all, never, never, never allow them all to be unloosed. Sure destruction shall follow, as the Battlespire departs the flux that keeps all sides of nature in unity. 
+
+Now avaunt, and quit this chamber, lest the imp of temptation, or some unhappy humour overcome you, and lead you onto the path of certain annihilation.
+
+C.V.
+
+#1038
+Gaze Upon this Device and its Subtle Workings, and Tremble with Wonder!
+By the grace and gifts of Clarentavious Valisious, thus the Star Galley is Made Fast and Secured Thereby.
+
+#1039
+The Mock Turtle introduces himself as a member of the rare species of Great Turtle from which is made the famous Mock Turtle Soup, the Soup of Kings.
+
+"Sit down and don't say a word until I've finished. Once," said the Mock Turtle with a deep sigh, "I was a real Turtle."
+
+The Mock Turtle relates a tragic and lengthy tale about going to school in the sea, and about his studies in the obscure disciplines of the Quadriva Arithmetia - Ambition, Distraction, Uglification, and Derision -- and the courses of instruction in Mystery, ancient and modern, with Seaography, Drawling, Stretching, Fainting in Coils, Laughing, and Grief.
+
+At last, when it becomes clear that his story has no point, you become restless.
+
+"Oh, dear," said the Mock Turtle. "I'm afraid I've bored you. You've been so kind to listen to the maunderings of an ancient reptile... please say my name backwards where it will do the most good, accept as a token of my gratitude a product of my researches in the field of Speculative Ontology."

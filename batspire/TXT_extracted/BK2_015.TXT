@@ -1,0 +1,68 @@
+Codex Arcana, Volume III
+
+STUDENTS AND SCHOLAR: Attend our Abjurations!$
+SHOWING DUE PROPRIETY IN THE CUSTODY OF BOOKS$
+
+We not only render service to the Emperor in preparing volumes of new books, but also exercise an office of sacred piety when we treat books carefully, and again when we restore them to their proper places and commend them to inviolable custody; that they may rejoice in purity while we have them in our hands, and rest securely when they are restored to their repositories.  And surely next to the vestments and engines dedicated to the Emperor's glory, arcane books deserve to be rightly treated by the battlemage, to which great injury is done so often as they are touched by unclean hands.  Wherefore we deem it expedient to warn our students against various negligences, such as might be easily avoided and which do wonderful harm to books.$
+
+Being a continuance of a partial index of arcane contrivances known to the scholars and alchemists of Battlespire, that these contrivances might more readily be known to all students, and neither abused, nor neglected, nor wasted in their employment.$
+$
+"Knight of the Grand Vigil"$
+Produces the casting of Major Shield$
+$
+"Lot of Fate"$
+Produces the casting of Medium Continuous Damage to the victim$
+$
+"Maid of Rime"$
+Casts the spell of Medium Frost Damage $
+$
+"Mote of Cleansing Fire"$
+Produces the casting of Major Fire Damage Range$
+$
+"Plume of Baleful Woe"$
+Renders the power of Minor Magic Damage $
+$
+"Prayer of Fleshfire"$
+Casts the spell of Medium Poison Damage Range$
+$
+"Principle of the Broad Force"$
+Renders the power of Medium Shock Damage $
+$
+"Ribs of the Mana Ward"$
+Produces the casting of Resistance to Magic$
+$
+"Root of the Hero"$
+Renders the power of Medium Cure Health$
+$
+"Rose of Weirdbane"$
+Produces the casting of Medium Magic Damage $
+$
+"Seal of the Grand Force"$
+Casts the spell of Major Shock Damage Range$
+$
+"Seed of Healing"$
+Produces the casting of Minor Cure Health$
+$
+"Shells of Magewrack"$
+Casts the spell of Major Magic Damage Range$
+$
+"Shimmer of the Frosty Ward"$
+Produces the casting of Resistance to Frost$
+$
+"Sifting of Stain"$
+Produces the casting of Minor Poison Damage Range$
+$
+"Skein of Convulsion"$
+Renders the power of Confusion$
+$
+"Skins of the Poison Ward"$
+Casts the spell of Resistance to Poison$
+$
+"Sliver of Skinchill"$
+Produces the casting of Minor Frost Damage Range$
+$
+"Sweetpin of Secrets"$
+Renders the power of Minor Delayed Damage$
+$
+"Swirl of the Bright Well"$
+Renders the power of Spell Absorption$

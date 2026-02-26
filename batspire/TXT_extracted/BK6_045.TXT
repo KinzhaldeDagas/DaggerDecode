@@ -1,0 +1,39 @@
+Codex Arcana, Volume IX
+
+STUDENTS AND SCHOLAR: Attend our Abjurations!$
+SHOWING DUE PROPRIETY IN THE CUSTODY OF BOOKS$
+
+We not only render service to the Emperor in preparing volumes of new books, but also exercise an office of sacred piety when we treat books carefully, and again when we restore them to their proper places and commend them to inviolable custody; that they may rejoice in purity while we have them in our hands, and rest securely when they are restored to their repositories.  And surely next to the vestments and engines dedicated to the Emperor's glory, arcane books deserve to be rightly treated by the battlemage, to which great injury is done so often as they are touched by unclean hands.  Wherefore we deem it expedient to warn our students against various negligences, such as might be easily avoided and which do wonderful harm to books.$
+
+Being a continuance of a partial index of arcane contrivances known to the scholars and alchemists of Battlespire, that these contrivances might more readily be known to all students, and neither abused, nor neglected, nor wasted in their employment.$
+
+
+ShortBow of the Bile of the Earth: enchanted with the spell of Fire shield, and is informed by the arts of ILLUSION
+
+ShortBow of Exposure: causes Minor Poison Damage, and gifts its owner with special insight into the disciplines of MYSTICISM
+
+ShortBow of Saturnine Purpose: wreaks Slow, Major Continuous Damage to Target, and partakes of the excellence of ILLUSION
+
+Sling of Delight: enchanted with the spell of Major Cure Health, and is informed by the arts of SHORTBLADE
+
+Sling of Fickle Endowment: casts the spell of Confusion, and partakes of the excellence of DESTRUCTION
+
+Sling of Riven Stars: engenders Medium Shock Damage, and gifts its owner with special insight into the disciplines of ALTERATION
+
+Spear of Snares and Springes: causes Minor Delayed Damage, and is informed by the arts of ILLUSION
+
+Spear of the Fox's Footfall: conceives the spell of Running, and partakes of the excellence of HANDTOHAND
+
+Spear of the Rain of Fire: causes Minor Fire Damage, and is schooled with crafts of MYSTICISM
+
+Staff of the Architect's Gaze: conceives the spell of Vampiric Drain, and gifts its owner with special insight into the disciplines of RESTORATION
+
+Staff of Dancing Fate: wreaks Major Shock Damage, and is informed by the arts of THAUMATURGY
+
+Staff of High Purpose: casts the spell of Jumping, and is schooled with crafts of LONGBLADE
+
+WarAxe of the Shrew: engenders Medium Magic Damage, and is schooled with crafts of ALTERATION
+
+WarAxe of Riven Stars: engenders Medium Shock Damage, and partakes of the excellence of DESTRUCTION
+
+WarAxe of the Tears of the Shark: causes Slow, Minor Continuous Damage to Target, and is informed by the arts of DESTRUCTION

@@ -1,0 +1,9 @@
+%PCF $
+I sure hope you come through here, I could use the help. $
+We are in so much trouble! All hell's broken loose here, and the gate home's blocked with some sort of damn thing which hurts to touch. A lot. $
+Have a look around, see if you can find anyone alive to talk to. I'm going to try to get a disguise and get out in the confusion. $
+I'm trying to remember what the instructor always said - scout out the land, eliminate your threats and gather resources. Or search, slaughter and steal for short.$
+See if you can keep up. $
+We're getting a real big test, looks like! $
+
+%APF $

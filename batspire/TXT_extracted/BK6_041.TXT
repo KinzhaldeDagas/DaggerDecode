@@ -1,0 +1,38 @@
+Codex Arcana, Volume V
+
+STUDENTS AND SCHOLAR: Attend our Abjurations!$
+SHOWING DUE PROPRIETY IN THE CUSTODY OF BOOKS$
+
+We not only render service to the Emperor in preparing volumes of new books, but also exercise an office of sacred piety when we treat books carefully, and again when we restore them to their proper places and commend them to inviolable custody; that they may rejoice in purity while we have them in our hands, and rest securely when they are restored to their repositories.  And surely next to the vestments and engines dedicated to the Emperor's glory, arcane books deserve to be rightly treated by the battlemage, to which great injury is done so often as they are touched by unclean hands.  Wherefore we deem it expedient to warn our students against various negligences, such as might be easily avoided and which do wonderful harm to books.$
+
+Being a continuance of a partial index of arcane contrivances known to the scholars and alchemists of Battlespire, that these contrivances might more readily be known to all students, and neither abused, nor neglected, nor wasted in their employment.$
+
+BattleAxe of Scathing: causes Minor Magic Damage, and is informed by the arts of ILLUSION
+
+BattleAxe of Marvelous Extension:provides castings of the spell Slow Fall, and gifts its owner with special insight into the disciplines of MYSTICISM
+
+BattleAxe of Heaven's Teeth: causes Minor Shock Damage, and is schooled with crafts of RUNNING
+
+Boots of the Creeping Things: enchanted with the spell of Summon Brute, and is informed by the arts of THAUMATURGY
+
+Boots of Glacial Hue: wreaks Major Frost Damage, and partakes of the excellence of THAUMATURGY
+
+Boots of Consuming Indwelling:provides castings of the spell Spell Absorption, and is schooled with crafts of RESTORATION
+
+Boots of Exquisite Perfection:provides castings of the spell Resistance to All elements, and gifts its owner with special insight into the disciplines of SHORTBLADE
+
+Broadsword of the Biting Pains: engenders Medium Frost Damage, and partakes of the excellence of DESTRUCTION
+
+Broadsword of Uncertainty: casts the spell of Invisibility, and is schooled with crafts of ALTERATION
+
+Broadsword of the Firmament:provides castings of the spell Resistance to Shock, and gifts its owner with special insight into the disciplines of MISSILE
+
+Broadsword of the Unnatural Essence: engenders Medium Poison Damage, and gifts its owner with special insight into the disciplines of BACKSTABBING
+
+Claymore of Mysteries: conceives the spell of Chameleon, and partakes of the excellence of THAUMATURGY
+
+Claymore of Sulphurous Death: wreaks Major Poison Damage, and is informed by the arts of JUMPING
+
+Claymore of Glacial Hue: wreaks Major Frost Damage, and gifts its owner with special insight into the disciplines of RESTORATION
+
+CrossBow of Pleasure: conceives the spell of Minor Cure Health, and partakes of the excellence of THAUMATURGY

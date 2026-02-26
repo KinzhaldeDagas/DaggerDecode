@@ -1,0 +1,53 @@
+Codex Arcana, Volume II
+
+STUDENTS AND SCHOLAR: Attend our Abjurations!$
+SHOWING DUE PROPRIETY IN THE CUSTODY OF BOOKS$
+
+We not only render service to the Emperor in preparing volumes of new books, but also exercise an office of sacred piety when we treat books carefully, and again when we restore them to their proper places and commend them to inviolable custody; that they may rejoice in purity while we have them in our hands, and rest securely when they are restored to their repositories.  And surely next to the vestments and engines dedicated to the Emperor's glory, arcane books deserve to be rightly treated by the battlemage, to which great injury is done so often as they are touched by unclean hands.  Wherefore we deem it expedient to warn our students against various negligences, such as might be easily avoided and which do wonderful harm to books.$
+
+Being a continuance of a partial index of arcane contrivances known to the scholars and alchemists of Battlespire, that these contrivances might more readily be known to all students, and neither abused, nor neglected, nor wasted in their employment.$
+$
+"Faremyle of Burning Blows"$
+Renders the power of Medium Fire Damage $
+$
+"Father of Blight"$
+Produces the casting of Medium Continuous Damage to the victim$
+$
+"Fin of Spite"$
+Produces the casting of Minor Continuous Damage to the victim$
+$
+"Flakes of Snow"$
+Produces the casting of Minor Frost Damage $
+$
+"Flame of the Greater Vigil"$
+Casts the spell of Medium Shield$
+$
+"Forks of Bonefrost"$
+Casts the spell of Major Frost Damage Range$
+$
+"Glaze of Mysteries"$
+Produces the casting of Medium Delayed Damage$
+$
+"Gleam of the Shock Ward"$
+Produces the casting of Resistance to Shock$
+$
+"Harkenor of Agony"$
+Renders the power of Major Continuous Damage to the victim$
+$
+"Harrow of Wizardbrand"$
+Casts the spell of Major Magic Damage $
+$
+"Heart of the Subtle Force"$
+Produces the casting of Minor Shock Damage $
+$
+"Horn of Magepain"$
+Renders the power of Medium Magic Damage Range$
+$
+"Hue of the Journeyman"$
+Casts the spell of Medium Poison Damage $
+$
+"Husk of the Fiery Ward$
+Casts the spell of Resistance to Fire$
+$
+"Incidence of Biter Bitten"$
+Produces the casting of Fire shield$

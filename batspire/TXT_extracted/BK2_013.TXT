@@ -1,0 +1,47 @@
+Codex Arcana, Volume I
+
+STUDENTS AND SCHOLAR: Attend our Abjurations!$
+SHOWING DUE PROPRIETY IN THE CUSTODY OF BOOKS$
+
+We not only render service to the Emperor in preparing volumes of new books, but also exercise an office of sacred piety when we treat books carefully, and again when we restore them to their proper places and commend them to inviolable custody; that they may rejoice in purity while we have them in our hands, and rest securely when they are restored to their repositories.  And surely next to the vestments and engines dedicated to the Emperor's glory, arcane books deserve to be rightly treated by the battlemage, to which great injury is done so often as they are touched by unclean hands.  Wherefore we deem it expedient to warn our students against various negligences, such as might be easily avoided and which do wonderful harm to books.$
+
+Being a partial index of arcane contrivances known to the scholars and alchemists of Battlespire, that these contrivances might more readily be known to all students, and neither abused, nor neglected, nor wasted in their employment.$
+
+"Art of Corruption"$
+Produces the casting of Major Poison Damage Range$
+$
+"Beaks of Lightning"$
+Casts the spell of Major Shock Damage Range$
+$
+"Bite of Fleshrime"$
+Renders the power of Medium Frost Damage Range$
+$
+"Blossom of Chastening Fire"$
+Produces the casting of Minor Fire Damage Range$
+$
+"Boils of Handfire"$
+Produces the casting of Minor Fire Damage$
+$
+"Bone of Resolve"$
+Produces the casting of Spell Resistance$
+$
+"Breath of the Vampire"$
+Produces the casting of Vampiric Drain$
+$
+"Candle of the Lesser Vigil"$
+Renders the power of Minor Shield$
+$
+"Coals of Bonesear"$
+Renders the power of Major Fire Damage $
+$
+"Din of Revelations"$
+Renders the power of Major Delayed Damage$
+$
+"Dove of Blistering Fire"$
+Renders the power of Medium Fire Damage Range$
+$
+"Ewer of Purity"$
+Renders the power of Cure Poison$
+$
+"Excrescence of Ice"$
+Produces the casting of Major Frost Damage $
