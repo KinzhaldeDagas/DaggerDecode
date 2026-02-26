@@ -13,4 +13,4 @@ Notes:
 - This MVP focuses on TEXT.RSC ingestion + CS-like browsing + deterministic CSV export.
 - Tokenization is MVP-grade (EndOfLine, NewLine, EndOfPage, Font, Color, BookImage, Unknown).
 - Battlespire installs commonly store source assets in "\batspire\GameData" (including `TXT.BSA` and `TEXT.RSC`).
-- Current app loading uses `TEXT.RSC` only; no files are currently loaded from the Battlespire directory itself and `TXT.BSA` is not ingested yet.
+- Battlespire loading supports direct `TEXT.RSC`; if missing, it extracts `TEXT.RSC` from `TXT.BSA` using the same footer/compression behavior as `tools/bsatool`.

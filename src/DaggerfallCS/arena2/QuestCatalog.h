@@ -46,12 +46,19 @@ struct QuestCatalog {
 	const VarHashCatalog* hashes{ nullptr };
 
     bool LoadFromArena2Root(const std::filesystem::path& folder, const VarHashCatalog* varHashes, std::wstring* err);
+    bool LoadFromBattlespireRoot(const std::filesystem::path& folder, const VarHashCatalog* varHashes, std::wstring* err);
     // Compatibility overloads: callers that don't have a hash catalog handy.
     bool LoadFromArena2Root(const std::filesystem::path& folder, std::wstring* err) {
         return LoadFromArena2Root(folder, nullptr, err);
     }
     bool LoadFromArena2Root(const std::filesystem::path& folder) {
         return LoadFromArena2Root(folder, nullptr, nullptr);
+    }
+    bool LoadFromBattlespireRoot(const std::filesystem::path& folder, std::wstring* err) {
+        return LoadFromBattlespireRoot(folder, nullptr, err);
+    }
+    bool LoadFromBattlespireRoot(const std::filesystem::path& folder) {
+        return LoadFromBattlespireRoot(folder, nullptr, nullptr);
     }
     bool EnsureQrcLoaded(size_t questIndex, std::wstring* err);
 };

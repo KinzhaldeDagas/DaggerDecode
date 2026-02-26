@@ -23,6 +23,29 @@ struct WavesPcm {
     static bool BuildWavFile(const std::vector<uint8_t>& pcm, std::vector<uint8_t>& wavOut, std::wstring* err);
 };
 
+
+struct BsaEntry {
+    std::string name;
+    uint32_t offset{};
+    uint32_t packedSize{};
+    uint16_t compressionFlag{};
+};
+
+struct BsaArchive {
+    std::filesystem::path sourcePath;
+    uint16_t recordCount{};
+    uint16_t recordType{};
+    std::vector<uint8_t> bytes;
+    std::vector<BsaEntry> entries;
+
+    static bool LoadFromFile(const std::filesystem::path& filePath, BsaArchive& out, std::wstring* err);
+    const BsaEntry* FindEntryCaseInsensitive(std::string_view name) const;
+    bool ReadEntryData(const BsaEntry& entry, std::vector<uint8_t>& outBytes, std::wstring* err) const;
+
+    // Tools/bsatool-compatible LZSS stream decode (used by pre-Morrowind BSA payloads).
+    static bool DecompressLzss(const uint8_t* data, size_t size, std::vector<uint8_t>& outBytes, std::wstring* err);
+};
+
 struct FlcFile {
     std::filesystem::path sourcePath;
     std::vector<uint8_t> bytes;
