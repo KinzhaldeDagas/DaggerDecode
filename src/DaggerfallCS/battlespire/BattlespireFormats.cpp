@@ -34,6 +34,10 @@ static uint16_t ReadU16(const uint8_t* p) {
     return static_cast<uint16_t>(p[0] | (uint16_t(p[1]) << 8));
 }
 
+static uint32_t ReadU32(const uint8_t* p) {
+    return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
+}
+
 static void WriteLe16(std::vector<uint8_t>& out, uint16_t v) {
     out.push_back(static_cast<uint8_t>(v & 0xFF));
     out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
@@ -110,6 +114,167 @@ bool WavesPcm::BuildWavFile(const std::vector<uint8_t>& pcm, std::vector<uint8_t
     wavOut.insert(wavOut.end(), pcm.begin(), pcm.end());
 
     return true;
+}
+
+
+bool BsaArchive::LoadFromFile(const std::filesystem::path& filePath, BsaArchive& out, std::wstring* err) {
+    out = {};
+    out.sourcePath = filePath;
+
+    if (!std::filesystem::exists(filePath)) {
+        if (err) *err = L"File not found.";
+        return false;
+    }
+
+    if (!ReadAllBytes(filePath, out.bytes, err)) {
+        return false;
+    }
+
+    if (out.bytes.size() < 4) {
+        if (err) *err = L"BSA is too small.";
+        out = {};
+        return false;
+    }
+
+    out.recordCount = ReadU16(out.bytes.data());
+    out.recordType = ReadU16(out.bytes.data() + 2);
+
+    size_t entrySize = 18;
+    bool hasNames = true;
+    if (out.recordType == 0x200) {
+        entrySize = 8;
+        hasNames = false;
+    } else if (out.recordType != 0x100) {
+        entrySize = 6;
+        hasNames = false;
+    }
+
+    const size_t footerBytes = size_t(out.recordCount) * entrySize;
+    if (out.bytes.size() < 4 + footerBytes) {
+        if (err) *err = L"BSA footer is truncated.";
+        out = {};
+        return false;
+    }
+
+    const size_t footerStart = out.bytes.size() - footerBytes;
+    size_t runningOffset = (out.recordType == 0x100 || out.recordType == 0x200) ? 4 : 2;
+
+    out.entries.clear();
+    out.entries.reserve(out.recordCount);
+
+    for (size_t i = 0; i < out.recordCount; ++i) {
+        size_t p = footerStart + i * entrySize;
+        BsaEntry e{};
+        e.offset = static_cast<uint32_t>(runningOffset);
+
+        if (out.recordType == 0x100) {
+            char nameBuf[13]{};
+            memcpy(nameBuf, out.bytes.data() + p, 12);
+            e.name = nameBuf;
+            e.compressionFlag = ReadU16(out.bytes.data() + p + 12);
+            e.packedSize = ReadU32(out.bytes.data() + p + 14);
+        } else if (out.recordType == 0x200) {
+            e.compressionFlag = ReadU16(out.bytes.data() + p + 0);
+            uint16_t nameId = ReadU16(out.bytes.data() + p + 2);
+            e.name = "REC_" + std::to_string(nameId);
+            e.packedSize = ReadU32(out.bytes.data() + p + 4);
+        } else {
+            e.compressionFlag = 0;
+            uint16_t nameId = ReadU16(out.bytes.data() + p + 0);
+            e.name = "REC_" + std::to_string(nameId);
+            e.packedSize = ReadU32(out.bytes.data() + p + 2);
+        }
+
+        if (e.packedSize > out.bytes.size() || runningOffset > out.bytes.size() - e.packedSize || runningOffset + e.packedSize > footerStart) {
+            if (err) *err = L"BSA entry layout is invalid.";
+            out = {};
+            return false;
+        }
+
+        out.entries.push_back(std::move(e));
+        runningOffset += out.entries.back().packedSize;
+    }
+
+    if (hasNames) {
+        for (auto& e : out.entries) {
+            while (!e.name.empty() && e.name.back() == '\0') e.name.pop_back();
+        }
+    }
+
+    return true;
+}
+
+const BsaEntry* BsaArchive::FindEntryCaseInsensitive(std::string_view name) const {
+    std::string needle(name);
+    for (auto& c : needle) c = static_cast<char>(toupper(static_cast<unsigned char>(c)));
+
+    for (const auto& e : entries) {
+        std::string n = e.name;
+        for (auto& c : n) c = static_cast<char>(toupper(static_cast<unsigned char>(c)));
+        if (n == needle) return &e;
+    }
+
+    return nullptr;
+}
+
+bool BsaArchive::DecompressLzss(const uint8_t* data, size_t size, std::vector<uint8_t>& outBytes, std::wstring* err) {
+    (void)err;
+    outBytes.clear();
+    if (!data || size == 0) return true;
+
+    std::array<uint8_t, 4096> window{};
+    for (size_t i = 0; i < 4078; ++i) window[i] = static_cast<uint8_t>(' ');
+
+    size_t pos = 4078;
+    size_t ip = 0;
+
+    while (ip < size) {
+        uint8_t flags = data[ip++];
+        for (int bit = 0; bit < 8; ++bit) {
+            if (ip >= size) return true;
+
+            bool literal = ((flags >> bit) & 1u) != 0;
+            if (literal) {
+                uint8_t b = data[ip++];
+                outBytes.push_back(b);
+                window[pos] = b;
+                pos = (pos + 1) & 0xFFFu;
+            } else {
+                if (ip + 1 >= size) return true;
+                uint8_t b0 = data[ip++];
+                uint8_t b1 = data[ip++];
+                size_t offset = size_t(b0) | (size_t(b1 & 0xF0u) << 4);
+                size_t length = size_t(b1 & 0x0Fu) + 3;
+                for (size_t k = 0; k < length; ++k) {
+                    uint8_t b = window[(offset + k) & 0xFFFu];
+                    outBytes.push_back(b);
+                    window[pos] = b;
+                    pos = (pos + 1) & 0xFFFu;
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
+bool BsaArchive::ReadEntryData(const BsaEntry& entry, std::vector<uint8_t>& outBytes, std::wstring* err) const {
+    outBytes.clear();
+
+    if (entry.offset > bytes.size() || entry.packedSize > bytes.size() - entry.offset) {
+        if (err) *err = L"BSA entry points outside archive bounds.";
+        return false;
+    }
+
+    const uint8_t* payload = bytes.data() + entry.offset;
+    const size_t payloadSize = entry.packedSize;
+
+    if (entry.compressionFlag == 0) {
+        outBytes.assign(payload, payload + payloadSize);
+        return true;
+    }
+
+    return DecompressLzss(payload, payloadSize, outBytes, err);
 }
 
 bool FlcFile::NormalizeLeadingPrefix(std::vector<uint8_t>& bytes, bool& strippedPrefix) {

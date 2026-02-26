@@ -36,6 +36,29 @@ static std::string ReadCStr20(const std::vector<uint8_t>& b, size_t off) {
     return std::string(buf);
 }
 
+
+static bool TrySectionBounds(const QbnHeader& h,
+                             size_t sectionIndex,
+                             size_t recordSize,
+                             size_t fileSize,
+                             size_t& outOffset,
+                             size_t& outCount) {
+    if (sectionIndex >= h.sectionRecordCount.size() || sectionIndex >= h.sectionOffset.size()) return false;
+
+    outCount = h.sectionRecordCount[sectionIndex];
+    outOffset = h.sectionOffset[sectionIndex];
+
+    if (outCount == 0) return false;
+    if (outOffset == 0 || outOffset >= fileSize) return false;
+
+    if (recordSize == 0) return false;
+    const size_t maxCount = (fileSize - outOffset) / recordSize;
+    if (maxCount == 0) return false;
+    if (outCount > maxCount) outCount = maxCount;
+
+    return outCount > 0;
+}
+
 bool QuestQbn::LoadFromFile(const std::filesystem::path& path, const VarHashCatalog* hashes, std::wstring* err) {
     sourcePath = path;
     states.clear();
@@ -75,14 +98,11 @@ bool QuestQbn::LoadFromFile(const std::filesystem::path& path, const VarHashCata
     // [Bytes 0-1] FlagIndex (Int16), [2] IsGlobal, [3] GlobalIndex, [4-7] TextVariableHash. 
     
     // OpCodes section is index 8, 0x57 bytes per record.
-    const uint16_t opcodeCount = header.sectionRecordCount[8];
-    const uint16_t opcodeOff = header.sectionOffset[8];
-    if (opcodeCount && opcodeOff) {
-        size_t need = (size_t)opcodeOff + (size_t)opcodeCount * 0x57;
-        if (need <= b.size()) {
-            opcodes.reserve(opcodeCount);
-            for (uint16_t i = 0; i < opcodeCount; ++i) {
-                size_t o = (size_t)opcodeOff + (size_t)i * 0x57;
+    size_t opcodeOff = 0, opcodeCount = 0;
+    if (TrySectionBounds(header, 8, 0x57, b.size(), opcodeOff, opcodeCount)) {
+        opcodes.reserve(opcodeCount);
+        for (size_t i = 0; i < opcodeCount; ++i) {
+            size_t o = opcodeOff + i * 0x57;
                 QbnOpCodeRecord r{};
                 r.fileOffset = (uint32_t)o;
                 r.opCode = ReadU16(b, o + 0);
@@ -105,19 +125,14 @@ bool QuestQbn::LoadFromFile(const std::filesystem::path& path, const VarHashCata
                 r.lastUpdate = ReadU32(b, o + 83);
 
                 opcodes.push_back(std::move(r));
-            }
         }
     }
 
-const uint16_t stateCount = header.sectionRecordCount[9];
-    const uint16_t stateOff = header.sectionOffset[9];
-
-    if (stateCount && stateOff) {
-        size_t need = (size_t)stateOff + (size_t)stateCount * 0x08;
-        if (need <= b.size()) {
-            states.reserve(stateCount);
-            for (uint16_t i = 0; i < stateCount; ++i) {
-                size_t o = (size_t)stateOff + (size_t)i * 0x08;
+    size_t stateOff = 0, stateCount = 0;
+    if (TrySectionBounds(header, 9, 0x08, b.size(), stateOff, stateCount)) {
+        states.reserve(stateCount);
+        for (size_t i = 0; i < stateCount; ++i) {
+            size_t o = stateOff + i * 0x08;
                 QbnState s{};
                 s.flagIndex = ReadI16(b, o + 0);
                 s.isGlobal = b[o + 2];
@@ -129,20 +144,15 @@ const uint16_t stateCount = header.sectionRecordCount[9];
                 }
 
                 states.push_back(std::move(s));
-            }
         }
     }
 
-    
     // Items section (index 0), 0x13 bytes per record.
-    const uint16_t itemCount = header.sectionRecordCount[0];
-    const uint16_t itemOff = header.sectionOffset[0];
-    if (itemCount && itemOff) {
-        size_t need = (size_t)itemOff + (size_t)itemCount * 0x13;
-        if (need <= b.size()) {
-            items.reserve(itemCount);
-            for (uint16_t i = 0; i < itemCount; ++i) {
-                size_t o = (size_t)itemOff + (size_t)i * 0x13;
+    size_t itemOff = 0, itemCount = 0;
+    if (TrySectionBounds(header, 0, 0x13, b.size(), itemOff, itemCount)) {
+        items.reserve(itemCount);
+        for (size_t i = 0; i < itemCount; ++i) {
+            size_t o = itemOff + i * 0x13;
                 QbnItem it{};
                 it.itemIndex = ReadI16(b, o + 0);
                 it.reward = b[o + 2];
@@ -156,19 +166,15 @@ const uint16_t stateCount = header.sectionRecordCount[9];
                     if (auto* names = hashes->NamesFor(it.textVarHash)) it.varNames = *names;
                 }
                 items.push_back(std::move(it));
-            }
         }
     }
 
     // NPCs section (index 3), 0x14 bytes per record.
-    const uint16_t npcCount = header.sectionRecordCount[3];
-    const uint16_t npcOff = header.sectionOffset[3];
-    if (npcCount && npcOff) {
-        size_t need = (size_t)npcOff + (size_t)npcCount * 0x14;
-        if (need <= b.size()) {
-            npcs.reserve(npcCount);
-            for (uint16_t i = 0; i < npcCount; ++i) {
-                size_t o = (size_t)npcOff + (size_t)i * 0x14;
+    size_t npcOff = 0, npcCount = 0;
+    if (TrySectionBounds(header, 3, 0x14, b.size(), npcOff, npcCount)) {
+        npcs.reserve(npcCount);
+        for (size_t i = 0; i < npcCount; ++i) {
+            size_t o = npcOff + i * 0x14;
                 QbnNpc n{};
                 n.npcIndex = ReadI16(b, o + 0);
                 n.gender = b[o + 2];
@@ -183,19 +189,15 @@ const uint16_t stateCount = header.sectionRecordCount[9];
                     if (auto* names = hashes->NamesFor(n.textVarHash)) n.varNames = *names;
                 }
                 npcs.push_back(std::move(n));
-            }
         }
     }
 
     // Locations section (index 4), 0x18 bytes per record.
-    const uint16_t locCount = header.sectionRecordCount[4];
-    const uint16_t locOff = header.sectionOffset[4];
-    if (locCount && locOff) {
-        size_t need = (size_t)locOff + (size_t)locCount * 0x18;
-        if (need <= b.size()) {
-            locations.reserve(locCount);
-            for (uint16_t i = 0; i < locCount; ++i) {
-                size_t o = (size_t)locOff + (size_t)i * 0x18;
+    size_t locOff = 0, locCount = 0;
+    if (TrySectionBounds(header, 4, 0x18, b.size(), locOff, locCount)) {
+        locations.reserve(locCount);
+        for (size_t i = 0; i < locCount; ++i) {
+            size_t o = locOff + i * 0x18;
                 QbnLocation l{};
                 l.locationIndex = ReadU16(b, o + 0);
                 l.flags = b[o + 2];
@@ -213,19 +215,15 @@ const uint16_t stateCount = header.sectionRecordCount[9];
                     if (auto* names = hashes->NamesFor(l.textVarHash)) l.varNames = *names;
                 }
                 locations.push_back(std::move(l));
-            }
         }
     }
 
     // Timers section (index 6), 0x21 bytes per record.
-    const uint16_t timCount = header.sectionRecordCount[6];
-    const uint16_t timOff = header.sectionOffset[6];
-    if (timCount && timOff) {
-        size_t need = (size_t)timOff + (size_t)timCount * 0x21;
-        if (need <= b.size()) {
-            timers.reserve(timCount);
-            for (uint16_t i = 0; i < timCount; ++i) {
-                size_t o = (size_t)timOff + (size_t)i * 0x21;
+    size_t timOff = 0, timCount = 0;
+    if (TrySectionBounds(header, 6, 0x21, b.size(), timOff, timCount)) {
+        timers.reserve(timCount);
+        for (size_t i = 0; i < timCount; ++i) {
+            size_t o = timOff + i * 0x21;
                 QbnTimer t{};
                 t.timerIndex = ReadI16(b, o + 0);
                 t.flags = ReadU16(b, o + 2);
@@ -242,19 +240,15 @@ const uint16_t stateCount = header.sectionRecordCount[9];
                     if (auto* names = hashes->NamesFor(t.textVarHash)) t.varNames = *names;
                 }
                 timers.push_back(std::move(t));
-            }
         }
     }
 
     // Mobs section (index 7), 0x0e bytes per record.
-    const uint16_t mobCount = header.sectionRecordCount[7];
-    const uint16_t mobOff = header.sectionOffset[7];
-    if (mobCount && mobOff) {
-        size_t need = (size_t)mobOff + (size_t)mobCount * 0x0e;
-        if (need <= b.size()) {
-            mobs.reserve(mobCount);
-            for (uint16_t i = 0; i < mobCount; ++i) {
-                size_t o = (size_t)mobOff + (size_t)i * 0x0e;
+    size_t mobOff = 0, mobCount = 0;
+    if (TrySectionBounds(header, 7, 0x0e, b.size(), mobOff, mobCount)) {
+        mobs.reserve(mobCount);
+        for (size_t i = 0; i < mobCount; ++i) {
+            size_t o = mobOff + i * 0x0e;
                 QbnMob m{};
                 m.mobIndex = b[o + 0];
                 m.null1 = ReadU16(b, o + 1);
@@ -267,12 +261,10 @@ const uint16_t stateCount = header.sectionRecordCount[9];
                     if (auto* names = hashes->NamesFor(m.textVarHash)) m.varNames = *names;
                 }
                 mobs.push_back(std::move(m));
-            }
         }
     }
 
-
-// Optional Text Variables section (index 10) is present only for some QBNs; record size 0x1b and runs to EOF, terminated by empty string. 
+    // Optional Text Variables section (index 10) is present only for some QBNs; record size 0x1b and runs to EOF, terminated by empty string.
     const uint16_t tvOff = header.sectionOffset[10];
     if (tvOff && tvOff < b.size()) {
         size_t o = tvOff;

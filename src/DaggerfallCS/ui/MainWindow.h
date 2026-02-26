@@ -4,6 +4,7 @@
 #include "../arena2/TextRscIndex.h"
 #include "../arena2/VarHashCatalog.h"
 #include "../arena2/QuestCatalog.h"
+#include "../battlespire/BattlespireFormats.h"
 #include "Splitter.h"
 #include "IndicesPrefsWindow.h"
 
@@ -41,13 +42,15 @@ public:
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 private:
-    enum class ViewMode { TextSubrecords, QuestData, QuestStages, QuestText, None };
+    enum class ViewMode { TextSubrecords, QuestData, QuestStages, QuestText, BsaEntry, None };
 
     struct TreePayload {
-        enum class Kind { TextRecord, QuestsRoot, Quest, QuestStages, QuestText };
+        enum class Kind { TextRecord, QuestsRoot, Quest, QuestStages, QuestText, BsaRoot, BsaArchive, BsaEntry };
         Kind kind{ Kind::TextRecord };
         uint16_t textRecordId{};
         size_t questIndex{};
+        size_t bsaArchiveIndex{};
+        size_t bsaEntryIndex{};
     };
 
     static constexpr LPARAM kRecordTag = 0x10000;
@@ -86,11 +89,16 @@ private:
     arena2::QuestCatalog m_quests;
     bool m_questsLoaded{ false };
 
+    // Battlespire BSA archives
+    std::vector<battlespire::BsaArchive> m_bsaArchives;
+    bool m_bsaLoaded{ false };
+
     std::atomic_bool m_loading{ false };
 
     // Tree model (payload-backed)
     HTREEITEM m_treeRootText{};
     HTREEITEM m_treeRootQuests{};
+    HTREEITEM m_treeRootBsa{};
     std::vector<std::unique_ptr<TreePayload>> m_treePayloads;
 
     // Incremental insertion queues
@@ -145,7 +153,7 @@ private:
 
 
     // Quests (UI)
-    TreePayload* AddPayload(TreePayload::Kind kind, uint16_t recId = 0, size_t questIdx = (size_t)-1);
+    TreePayload* AddPayload(TreePayload::Kind kind, uint16_t recId = 0, size_t questIdx = (size_t)-1, size_t bsaArchiveIdx = (size_t)-1, size_t bsaEntryIdx = (size_t)-1);
     TreePayload* GetSelectedPayload() const;
 
     void SetupListColumns_TextSubrecords();
