@@ -1406,6 +1406,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             int dy = p.y - s->lastMouse.y;
             s->lastMouse = p;
             s->yaw += dx * 0.005f;
+            s->yaw = std::remainderf(s->yaw, 6.28318530718f);
             s->pitch -= dy * 0.005f;
             if (s->pitch > 1.5f) s->pitch = 1.5f;
             if (s->pitch < -1.5f) s->pitch = -1.5f;
@@ -1433,6 +1434,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             if (s->keys['D']) { s->camX += fy * speed; s->camZ -= fx * speed; moved = true; }
             if (s->keys['Q']) { s->camY += speed; moved = true; }
             if (s->keys['E']) { s->camY -= speed; moved = true; }
+            s->yaw = std::remainderf(s->yaw, 6.28318530718f);
             if (moved || streamed) InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
@@ -2454,7 +2456,7 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
             float ambientNorm = std::clamp(float(payload->ambient) / 60000.0f, 0.0f, 1.0f);
             float brightnessNorm = std::clamp(float(payload->brightness) / 1023.0f, 0.0f, 1.0f);
             // Research-guided conservative blend; BRIT tracks LITD counts strongly and AMBI has broad variance.
-            float lightingScale = std::clamp(0.25f + 0.60f * brightnessNorm + 0.30f * ambientNorm, 0.20f, 1.20f);
+            float lightingScale = std::clamp((0.25f + 0.60f * brightnessNorm + 0.30f * ambientNorm) * 1.25f, 0.25f, 1.50f);
 
             auto applyLightScale = [&](COLORREF c) -> COLORREF {
                 int r = std::clamp(int(float(GetRValue(c)) * lightingScale), 0, 255);
@@ -2646,28 +2648,36 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
 
                 payload->resolvedInstances++;
                 const auto& mesh = mit->second;
+                std::string modelKeyStem = NormalizeTextureStem(modelKey);
+                const std::string& textureStemHint = (!modelKeyStem.empty() && b3dResearch.knownFiles.find(modelKeyStem) != b3dResearch.knownFiles.end())
+                    ? modelKeyStem
+                    : modelStem;
+
+                std::vector<battlespire::Int3> transformedPoints;
+                transformedPoints.reserve(mesh.points.size());
+                std::vector<uint8_t> transformedValid;
+                transformedValid.resize(mesh.points.size(), 0);
+                for (size_t pointIndex = 0; pointIndex < mesh.points.size(); ++pointIndex) {
+                    battlespire::Int3 wp{};
+                    bool ok = applyTransform(mesh.points[pointIndex], inst, wp);
+                    transformedPoints.push_back(wp);
+                    transformedValid[pointIndex] = ok ? 1u : 0u;
+                }
+
                 for (const auto& face : mesh.faces) {
                     PreviewFace pf{};
                     pf.color = colorFromTextureTag(face.textureTag, modelStem);
                     pf.textureTag = face.textureTag;
-                    const auto& b3dResearch = GetB3dResearchBounds();
-                    std::string modelKeyStem = NormalizeTextureStem(modelKey);
-                    if (!modelKeyStem.empty() && b3dResearch.knownFiles.find(modelKeyStem) != b3dResearch.knownFiles.end()) {
-                        pf.textureStemHint = modelKeyStem;
-                    }
-                    else {
-                        pf.textureStemHint = modelStem;
-                    }
+                    pf.textureStemHint = textureStemHint;
                     pf.hasUvTexture = (face.uvs.size() == face.pointIndices.size() && !face.uvs.empty());
                     if (pf.hasUvTexture) {
                         pf.uvs.reserve(face.uvs.size());
                         for (const auto& uv : face.uvs) pf.uvs.push_back({ (float)uv.u, (float)uv.v });
                     }
+                    pf.worldPoints.reserve(face.pointIndices.size());
                     for (uint32_t pi : face.pointIndices) {
-                        if (pi >= mesh.points.size()) continue;
-                        battlespire::Int3 wp{};
-                        if (!applyTransform(mesh.points[pi], inst, wp)) continue;
-                        pf.worldPoints.push_back(wp);
+                        if (pi >= transformedPoints.size() || !transformedValid[pi]) continue;
+                        pf.worldPoints.push_back(transformedPoints[pi]);
                     }
                     if (pf.worldPoints.size() >= 3) {
                         payload->modelFaces.push_back(std::move(pf));
