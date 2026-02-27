@@ -498,6 +498,14 @@ static bool TryParseDialogueBundleName(const std::wstring& name, std::wstring& q
     return true;
 }
 
+static std::wstring DialoguePatternLabel(const std::wstring& questCode) {
+    if (questCode.size() != 2) return L"Pattern " + questCode;
+    std::wstring out = L"Pattern ";
+    out.push_back((wchar_t)towupper(questCode[0]));
+    out.push_back((wchar_t)towupper(questCode[1]));
+    return out;
+}
+
 static void SortBsaCategoryEntries(const battlespire::BsaArchive& a, const std::wstring& cat, std::vector<size_t>& entries) {
     if (entries.size() < 2) return;
 
@@ -958,6 +966,65 @@ void MainWindow::StartTreeBuild() {
                 cins.item.mask = TVIF_TEXT;
                 cins.item.pszText = const_cast<wchar_t*>(cLabel.c_str());
                 HTREEITEM ch = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&cins);
+
+                if (_wcsicmp(cat.c_str(), L"Dialogue Bundles") == 0) {
+                    std::map<int, std::map<std::wstring, std::vector<size_t>>> byLevelAndPattern;
+                    std::vector<size_t> unparsed;
+
+                    for (size_t ei : it->second) {
+                        const std::wstring bn = BaseNameOnly(winutil::WidenUtf8(a.entries[ei].name));
+                        std::wstring questCode;
+                        int level = 0;
+                        wchar_t variant = 0;
+                        if (TryParseDialogueBundleName(bn, questCode, level, variant)) {
+                            byLevelAndPattern[level][questCode].push_back(ei);
+                        } else {
+                            unparsed.push_back(ei);
+                        }
+                    }
+
+                    for (const auto& levelPair : byLevelAndPattern) {
+                        size_t levelCount = 0;
+                        for (const auto& patternPair : levelPair.second) levelCount += patternPair.second.size();
+
+                        wchar_t levelBuf[64]{};
+                        swprintf_s(levelBuf, L"Level %d (%zu)", levelPair.first, levelCount);
+
+                        TVINSERTSTRUCTW lins{};
+                        lins.hParent = ch;
+                        lins.hInsertAfter = TVI_LAST;
+                        lins.item.mask = TVIF_TEXT;
+                        lins.item.pszText = levelBuf;
+                        HTREEITEM lh = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&lins);
+
+                        for (const auto& patternPair : levelPair.second) {
+                            size_t patternCount = patternPair.second.size();
+                            std::wstring patternLabel = DialoguePatternLabel(patternPair.first);
+                            patternLabel += L" (" + std::to_wstring(patternCount) + L")";
+
+                            TVINSERTSTRUCTW pins{};
+                            pins.hParent = lh;
+                            pins.hInsertAfter = TVI_LAST;
+                            pins.item.mask = TVIF_TEXT;
+                            pins.item.pszText = const_cast<wchar_t*>(patternLabel.c_str());
+                            HTREEITEM ph = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&pins);
+
+                            for (size_t ei : patternPair.second) insertEntryNode(ph, ei);
+                        }
+                    }
+
+                    if (!unparsed.empty()) {
+                        std::wstring unparsedLabel = L"Unparsed (" + std::to_wstring(unparsed.size()) + L")";
+                        TVINSERTSTRUCTW uins{};
+                        uins.hParent = ch;
+                        uins.hInsertAfter = TVI_LAST;
+                        uins.item.mask = TVIF_TEXT;
+                        uins.item.pszText = const_cast<wchar_t*>(unparsedLabel.c_str());
+                        HTREEITEM uh = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&uins);
+                        for (size_t ei : unparsed) insertEntryNode(uh, ei);
+                    }
+                    continue;
+                }
 
                 for (size_t ei : it->second) insertEntryNode(ch, ei);
             }
