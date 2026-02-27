@@ -203,34 +203,52 @@ static std::unordered_map<std::string, BsiPreviewTexture>& BsiTextureCache() {
     return s;
 }
 
-static const BsiPreviewTexture* TryGetTextureForTag(const std::array<uint8_t, 6>& tag) {
-    const std::string tagHex = TextureTagHex(tag);
-    const auto& bound = BoundTagToStem();
-    auto bt = bound.find(tagHex);
-    if (bt == bound.end()) return nullptr;
+static bool TryDecodeBsiFromAnyOffset(const std::vector<uint8_t>& bytes, BsiPreviewTexture& out) {
+    if (TryDecodeBsiPreviewTexture(bytes, out)) return true;
+    for (size_t i = 0; i + 4 < bytes.size(); ++i) {
+        if (bytes[i] == 'B' && bytes[i + 1] == 'H' && bytes[i + 2] == 'D' && bytes[i + 3] == 'R') {
+            std::vector<uint8_t> slice(bytes.begin() + i, bytes.end());
+            if (TryDecodeBsiPreviewTexture(slice, out)) return true;
+        }
+    }
+    return false;
+}
 
+static const BsiPreviewTexture* TryGetTextureByStem(const std::string& stem) {
     auto& cache = BsiTextureCache();
-    auto it = cache.find(bt->second);
+    auto it = cache.find(stem);
     if (it == cache.end()) {
         BsiPreviewTexture tex{};
         std::vector<uint8_t> bytes;
-        std::ifstream tf("batspire/bsi_extracted/" + bt->second + ".BSI", std::ios::binary);
+        std::ifstream tf("batspire/bsi_extracted/" + stem + ".BSI", std::ios::binary);
         if (tf) {
             tf.seekg(0, std::ios::end);
             size_t n = (size_t)tf.tellg();
             tf.seekg(0, std::ios::beg);
             bytes.resize(n);
             if (n > 0) tf.read(reinterpret_cast<char*>(bytes.data()), (std::streamsize)n);
-            TryDecodeBsiPreviewTexture(bytes, tex);
+            TryDecodeBsiFromAnyOffset(bytes, tex);
         }
-        it = cache.insert({ bt->second, std::move(tex) }).first;
+        it = cache.insert({ stem, std::move(tex) }).first;
     }
-
     if (it->second.indices.empty()) return nullptr;
     return &it->second;
 }
 
-static COLORREF SampleTextureColor(const BsiPreviewTexture& tex, float u, float v) {
+static const BsiPreviewTexture* TryGetTextureForFace(const std::array<uint8_t, 6>& tag, const std::string& stemHint) {
+    const std::string tagHex = TextureTagHex(tag);
+    const auto& bound = BoundTagToStem();
+    auto bt = bound.find(tagHex);
+    if (bt != bound.end()) {
+        if (const auto* t = TryGetTextureByStem(bt->second)) return t;
+    }
+    if (!stemHint.empty()) {
+        if (const auto* t = TryGetTextureByStem(stemHint)) return t;
+    }
+    return nullptr;
+}
+
+static COLORREF SampleTextureColorNearest(const BsiPreviewTexture& tex, float u, float v) {
     if (tex.indices.empty() || tex.width <= 0 || tex.height <= 0) return RGB(120, 120, 120);
     int tx = int(floorf(u)) % tex.width;
     int ty = int(floorf(v)) % tex.height;
@@ -242,6 +260,56 @@ static COLORREF SampleTextureColor(const BsiPreviewTexture& tex, float u, float 
     if (tex.hasPalette) return tex.palette[idx];
     uint8_t c = uint8_t(24 + (idx * 3) / 4);
     return RGB(c, c, c);
+}
+
+static COLORREF SampleTextureColorBilinear(const BsiPreviewTexture& tex, float u, float v) {
+    if (tex.indices.empty() || tex.width <= 0 || tex.height <= 0) return RGB(120, 120, 120);
+
+    auto wrap = [](int x, int m) -> int {
+        int r = x % m;
+        return r < 0 ? r + m : r;
+    };
+
+    int x0 = int(floorf(u));
+    int y0 = int(floorf(v));
+    float fu = u - floorf(u);
+    float fv = v - floorf(v);
+
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+
+    auto fetch = [&](int tx, int ty) -> COLORREF {
+        tx = wrap(tx, tex.width);
+        ty = wrap(ty, tex.height);
+        size_t idxPos = size_t(ty) * size_t(tex.width) + size_t(tx);
+        if (idxPos >= tex.indices.size()) idxPos %= tex.indices.size();
+        uint8_t idx = tex.indices[idxPos];
+        if (tex.hasPalette) return tex.palette[idx];
+        uint8_t c = uint8_t(24 + (idx * 3) / 4);
+        return RGB(c, c, c);
+    };
+
+    COLORREF c00 = fetch(x0, y0);
+    COLORREF c10 = fetch(x1, y0);
+    COLORREF c01 = fetch(x0, y1);
+    COLORREF c11 = fetch(x1, y1);
+
+    auto lerp = [](float a, float b, float t) -> float { return a + (b - a) * t; };
+    float r0 = lerp((float)GetRValue(c00), (float)GetRValue(c10), fu);
+    float g0 = lerp((float)GetGValue(c00), (float)GetGValue(c10), fu);
+    float b0 = lerp((float)GetBValue(c00), (float)GetBValue(c10), fu);
+    float r1 = lerp((float)GetRValue(c01), (float)GetRValue(c11), fu);
+    float g1 = lerp((float)GetGValue(c01), (float)GetGValue(c11), fu);
+    float b1 = lerp((float)GetBValue(c01), (float)GetBValue(c11), fu);
+
+    uint8_t r = (uint8_t)std::clamp(int(lerp(r0, r1, fv) + 0.5f), 0, 255);
+    uint8_t g = (uint8_t)std::clamp(int(lerp(g0, g1, fv) + 0.5f), 0, 255);
+    uint8_t b = (uint8_t)std::clamp(int(lerp(b0, b1, fv) + 0.5f), 0, 255);
+    return RGB(r, g, b);
+}
+
+static COLORREF SampleTextureColor(const BsiPreviewTexture& tex, float u, float v, bool bilinear) {
+    return bilinear ? SampleTextureColorBilinear(tex, u, v) : SampleTextureColorNearest(tex, u, v);
 }
 
 static std::wstring ToLowerCopy(std::wstring s) {
@@ -258,6 +326,7 @@ struct PreviewFace {
     std::vector<battlespire::Int3> worldPoints;
     std::vector<POINT> uvs;
     std::array<uint8_t, 6> textureTag{};
+    std::string textureStemHint;
     bool hasUvTexture{ false };
     COLORREF color{ RGB(180, 180, 180) };
 };
@@ -284,6 +353,7 @@ struct LevelPreviewState {
     bool dragging = false;
     POINT lastMouse{};
     std::array<bool, 256> keys{};
+    bool bilinearSampling = false;
 };
 
 static void DrawTextBottomRight(HDC hdc, RECT rc, const std::wstring& text, COLORREF color) {
@@ -356,6 +426,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         std::vector<POINT> pts;
         std::vector<POINT> uvs;
         std::array<uint8_t, 6> textureTag{};
+        std::string textureStemHint;
         bool hasUvTexture{ false };
         float avgDepth{};
         COLORREF color{};
@@ -384,6 +455,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         DrawFace df{};
         df.color = face.color;
         df.textureTag = face.textureTag;
+        df.textureStemHint = face.textureStemHint;
         df.hasUvTexture = face.hasUvTexture;
         df.pts.reserve(face.worldPoints.size());
         if (face.hasUvTexture) df.uvs = face.uvs;
@@ -411,7 +483,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     });
 
     for (const auto& df : drawFaces) {
-        const auto* tex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForTag(df.textureTag) : nullptr;
+        const auto* tex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForFace(df.textureTag, df.textureStemHint) : nullptr;
         if (tex && df.pts.size() >= 3) {
             for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
                 const POINT p0 = df.pts[0], p1 = df.pts[ti], p2 = df.pts[ti + 1];
@@ -439,7 +511,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
 
                         float u = w0 * float(t0.x) + w1 * float(t1.x) + w2 * float(t2.x);
                         float v = w0 * float(t0.y) + w1 * float(t1.y) + w2 * float(t2.y);
-                        SetPixelV(hdc, x, y, SampleTextureColor(*tex, u, v));
+                        SetPixelV(hdc, x, y, SampleTextureColor(*tex, u, v, s.bilinearSampling));
                     }
                 }
             }
@@ -479,7 +551,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     DeleteObject(penBox);
     DeleteObject(penPoint);
 
-    std::wstring msg = s.scene->label + L"  models " + std::to_wstring(s.scene->resolvedInstances) + L"/" + std::to_wstring(s.scene->modelInstances) + L"  (WASD move, click+drag rotate)";
+    std::wstring msg = s.scene->label + L"  models " + std::to_wstring(s.scene->resolvedInstances) + L"/" + std::to_wstring(s.scene->modelInstances) + L"  (WASD move, click+drag rotate, B toggle bilinear)";
     DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
 }
 
@@ -519,6 +591,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         return 0;
     case WM_KEYDOWN:
         if (s && wParam < s->keys.size()) s->keys[wParam] = true;
+        if (s && (wParam == 'B' || wParam == 'b')) s->bilinearSampling = !s->bilinearSampling;
         return 0;
     case WM_KEYUP:
         if (s && wParam < s->keys.size()) s->keys[wParam] = false;
@@ -1551,13 +1624,13 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
         if (modelsArchive) {
             std::unordered_map<std::string, battlespire::B3dMesh> meshCache;
 
-            auto colorFromTextureTag = [](const std::array<uint8_t, 6>& t) -> COLORREF {
-                if (const auto* tex = TryGetTextureForTag(t)) {
+            auto colorFromTextureTag = [](const std::array<uint8_t, 6>& t, const std::string& stemHint) -> COLORREF {
+                if (const auto* tex = TryGetTextureForFace(t, stemHint)) {
                     uint32_t h = 2166136261u;
                     for (uint8_t bt : t) h = (h ^ bt) * 16777619u;
                     float u = float((h >> 8) % std::max(1, tex->width));
                     float v = float((h >> 16) % std::max(1, tex->height));
-                    return SampleTextureColor(*tex, u, v);
+                    return SampleTextureColor(*tex, u, v, false);
                 }
 
                 bool allZero = true;
@@ -1620,6 +1693,9 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
                 std::string modelKey = inst.modelName;
                 for (auto& c : modelKey) c = (char)toupper((unsigned char)c);
                 if (!modelKey.empty() && modelKey.find('.') == std::string::npos) modelKey += ".3D";
+                std::string modelStem = modelKey;
+                size_t modelDot = modelStem.find('.');
+                if (modelDot != std::string::npos) modelStem = modelStem.substr(0, modelDot);
 
                 auto resolveEntry = [&](const std::string& key) -> const battlespire::BsaEntry* {
                     const auto* e = modelsArchive->FindEntryCaseInsensitive(key);
@@ -1664,8 +1740,9 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
                 const auto& mesh = mit->second;
                 for (const auto& face : mesh.faces) {
                     PreviewFace pf{};
-                    pf.color = colorFromTextureTag(face.textureTag);
+                    pf.color = colorFromTextureTag(face.textureTag, modelStem);
                     pf.textureTag = face.textureTag;
+                    pf.textureStemHint = modelStem;
                     pf.hasUvTexture = (face.uvs.size() == face.pointIndices.size() && !face.uvs.empty());
                     if (pf.hasUvTexture) {
                         pf.uvs.reserve(face.uvs.size());

@@ -50,7 +50,7 @@ Build a **1:1 in-app Battlespire level viewer** where BS6 levels render with mod
 
 - [x] Identify Battlespire texture-container candidates (TEXI DIRN + BSI inventory baselined in Phase 2 artifacts).
 - [~] Map 3D face texture tags to concrete texture resources (seed + conservative unique-family auto-bindings generated; broad manual review still pending).
-- [~] Implement software texture rasterization in viewer (bound-BSI decode path + UV triangle raster (nearest sampling) now active in preview; bilinear and parity validation still pending).
+- [~] Implement software texture rasterization in viewer (bound-BSI decode path + UV triangle raster now active in preview with nearest/bilinear toggle (`B`); parity validation and material/blend matching still pending).
 
 **Exit criteria**: Faces display actual texture content (not hash colors) for >95% of corpus meshes.
 
