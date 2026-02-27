@@ -221,6 +221,43 @@ static std::vector<std::vector<std::wstring>> ParseTabLines(const std::wstring& 
     return rows;
 }
 
+static std::wstring BaseNameOnly(const std::wstring& name) {
+    size_t slash = name.find_last_of(L"/\\");
+    std::wstring leaf = (slash == std::wstring::npos) ? name : name.substr(slash + 1);
+    return ToLowerWs(leaf);
+}
+
+static std::wstring ClassifyTxtBsaEntryCategory(const std::string& entryNameUtf8) {
+    std::wstring name = BaseNameOnly(winutil::WidenUtf8(entryNameUtf8));
+
+    std::wregex reDialogue(LR"(^[a-z]{2}\d+[btmf]\.txt$)");
+    std::wregex reBook(LR"(^bk\d+_\d+\.txt$)");
+    std::wregex reAmtbl(LR"(^amtbl\d+\.txt$)");
+    std::wregex reLShard(LR"(^l\d+\.txt$)");
+    std::wregex reBugs(LR"(^bugs(l\d+|mult)?\.txt$)");
+
+    if (std::regex_match(name, reDialogue)) return L"Dialogue Bundles";
+    if (std::regex_match(name, reBook) || name == L"book0000.txt") return L"Books";
+
+    if (name == L"iteml2.txt" || name == L"siteml2.txt" || name == L"magic.txt" ||
+        name == L"mg0_gen.txt" || name == L"mg2_spc.txt" || name == L"sigils.txt") {
+        return L"Item/Magic/Sigil Tables";
+    }
+
+    if (std::regex_match(name, reAmtbl) || std::regex_match(name, reLShard)) return L"Auxiliary Tables/Lists";
+    if (std::regex_match(name, reBugs) || name == L"big_bugs.txt" || name == L"lil_bugs.txt") return L"Bug Notes";
+
+    if (name == L"adr.txt" || name == L"comlog.txt" || name == L"errorlog.txt" ||
+        name == L"julian.txt" || name == L"julian!!.txt" || name == L"memlog.txt" ||
+        name == L"note.txt" || name == L"spire.txt" || name == L"stuff.txt" ||
+        name == L"temp.txt" || name == L"tmp.txt" || name == L"todo.txt") {
+        return L"Logs/Scratch";
+    }
+
+    if (EndsWithWs(name, L".txt")) return L"Other TXT";
+    return L"Non-TXT";
+}
+
 static bool IsDialogueScriptHeaderCell(const std::wstring& cell) {
     std::wstring c = ToLowerWs(TrimWs(cell));
     return c == L"saycode" || c == L"npc say" || c == L"replycode" || c == L"pc reply" || c == L"do this action" || c == L"goto";
@@ -562,7 +599,16 @@ void MainWindow::StartTreeBuild() {
             ains.item.lParam = (LPARAM)AddPayload(TreePayload::Kind::BsaArchive, 0, (size_t)-1, ai, (size_t)-1);
             HTREEITEM ah = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&ains);
 
+            std::map<std::wstring, std::vector<size_t>> txtCategories;
+            std::vector<size_t> nonTxt;
             for (size_t ei = 0; ei < a.entries.size(); ++ei) {
+                const auto& e = a.entries[ei];
+                std::wstring cat = ClassifyTxtBsaEntryCategory(e.name);
+                if (cat == L"Non-TXT") nonTxt.push_back(ei);
+                else txtCategories[cat].push_back(ei);
+            }
+
+            auto insertEntryNode = [&](HTREEITEM parent, size_t ei) {
                 const auto& e = a.entries[ei];
                 std::wstring label = winutil::WidenUtf8(e.name);
                 wchar_t suffix[96]{};
@@ -570,12 +616,48 @@ void MainWindow::StartTreeBuild() {
                 label += suffix;
 
                 TVINSERTSTRUCTW eins{};
-                eins.hParent = ah;
+                eins.hParent = parent;
                 eins.hInsertAfter = TVI_LAST;
                 eins.item.mask = TVIF_TEXT | TVIF_PARAM;
                 eins.item.pszText = const_cast<wchar_t*>(label.c_str());
                 eins.item.lParam = (LPARAM)AddPayload(TreePayload::Kind::BsaEntry, 0, (size_t)-1, ai, ei);
                 SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&eins);
+            };
+
+            const std::vector<std::wstring> catOrder = {
+                L"Dialogue Bundles",
+                L"Books",
+                L"Item/Magic/Sigil Tables",
+                L"Auxiliary Tables/Lists",
+                L"Bug Notes",
+                L"Logs/Scratch",
+                L"Other TXT"
+            };
+
+            for (const auto& cat : catOrder) {
+                auto it = txtCategories.find(cat);
+                if (it == txtCategories.end() || it->second.empty()) continue;
+
+                std::wstring cLabel = cat + L" (" + std::to_wstring(it->second.size()) + L")";
+                TVINSERTSTRUCTW cins{};
+                cins.hParent = ah;
+                cins.hInsertAfter = TVI_LAST;
+                cins.item.mask = TVIF_TEXT;
+                cins.item.pszText = const_cast<wchar_t*>(cLabel.c_str());
+                HTREEITEM ch = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&cins);
+
+                for (size_t ei : it->second) insertEntryNode(ch, ei);
+            }
+
+            if (!nonTxt.empty()) {
+                std::wstring cLabel = L"Non-TXT (" + std::to_wstring(nonTxt.size()) + L")";
+                TVINSERTSTRUCTW cins{};
+                cins.hParent = ah;
+                cins.hInsertAfter = TVI_LAST;
+                cins.item.mask = TVIF_TEXT;
+                cins.item.pszText = const_cast<wchar_t*>(cLabel.c_str());
+                HTREEITEM ch = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&cins);
+                for (size_t ei : nonTxt) insertEntryNode(ch, ei);
             }
         }
     }
