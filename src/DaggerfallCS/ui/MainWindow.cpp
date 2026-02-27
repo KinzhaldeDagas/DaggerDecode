@@ -5,8 +5,6 @@
 #include "../export/CsvWriter.h"
 #include "../arena2/QuestOpcodeDisasm.h"
 #include "../battlespire/BattlespireFormats.h"
-#include <mmsystem.h>
-#pragma comment(lib, "winmm.lib")
 
 namespace ui {
 
@@ -432,8 +430,15 @@ static bool TryLaunchPairedVoice(HWND owner,
         return false;
     }
 
-    if (!PlaySoundW(wavPath.c_str(), nullptr, SND_ASYNC | SND_FILENAME | SND_NODEFAULT)) {
-        if (err) *err = L"Failed to launch paired voice playback.";
+    auto tryOpen = [&](const wchar_t* file, const wchar_t* params) -> bool {
+        HINSTANCE h = ShellExecuteW(owner, L"open", file, params, nullptr, SW_SHOWNORMAL);
+        return (INT_PTR)h > 32;
+    };
+
+    // Force a separate VLC launch for voice so FLC animation + voice can run in parallel windows.
+    const std::wstring quoted = L"\"" + wavPath + L"\"";
+    if (!tryOpen(L"vlc", quoted.c_str())) {
+        if (err) *err = L"Failed to launch paired voice in VLC.";
         return false;
     }
 
