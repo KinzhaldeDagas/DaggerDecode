@@ -6,6 +6,7 @@
 #include "../arena2/QuestOpcodeDisasm.h"
 #include "../battlespire/BattlespireFormats.h"
 #include <cmath>
+#include <deque>
 #include <unordered_set>
 
 namespace ui {
@@ -369,6 +370,16 @@ static std::unordered_map<std::string, BsiPreviewTexture>& BsiTextureCache() {
     return s;
 }
 
+static std::deque<std::string>& TextureStreamQueue() {
+    static std::deque<std::string> s;
+    return s;
+}
+
+static std::unordered_set<std::string>& TextureStreamQueuedSet() {
+    static std::unordered_set<std::string> s;
+    return s;
+}
+
 static constexpr size_t kMaxTextureCacheEntries = 4096;
 static const std::string kMissResolveStem = "__MISS__";
 
@@ -382,6 +393,8 @@ static void RefreshTextureSourceArchives(const std::vector<battlespire::BsaArchi
     out.clear();
     TextureResolveCache().clear();
     BsiTextureCache().clear();
+    TextureStreamQueue().clear();
+    TextureStreamQueuedSet().clear();
     for (const auto& a : archives) {
         std::wstring wn = a.sourcePath.filename().wstring();
         for (auto& c : wn) c = (wchar_t)towlower(c);
@@ -408,46 +421,71 @@ static bool TryDecodeBsiFromAnyOffset(const std::vector<uint8_t>& bytes, BsiPrev
     return false;
 }
 
-static const BsiPreviewTexture* TryGetTextureByStem(const std::string& stemIn) {
+static BsiPreviewTexture LoadTextureByStemSync(const std::string& stem) {
+    BsiPreviewTexture tex{};
+    std::vector<uint8_t> bytes;
+
+    std::ifstream tf("batspire/bsi_extracted/" + stem + ".BSI", std::ios::binary);
+    if (tf) {
+        tf.seekg(0, std::ios::end);
+        size_t n = (size_t)tf.tellg();
+        tf.seekg(0, std::ios::beg);
+        if (n > 0 && n <= kMaxBsiBytes) {
+            bytes.resize(n);
+            tf.read(reinterpret_cast<char*>(bytes.data()), (std::streamsize)n);
+            if (tf.good() || tf.eof()) TryDecodeBsiFromAnyOffset(bytes, tex);
+        }
+    }
+
+    if (tex.indices.empty()) {
+        const std::string name = stem + ".BSI";
+        for (const auto* arc : TextureSourceArchives()) {
+            if (!arc) continue;
+            const auto* e = arc->FindEntryCaseInsensitive(name);
+            if (!e) continue;
+            std::wstring err;
+            std::vector<uint8_t> arcBytes;
+            if (!arc->ReadEntryData(*e, arcBytes, &err)) continue;
+            if (arcBytes.size() > kMaxBsiBytes) continue;
+            if (TryDecodeBsiFromAnyOffset(arcBytes, tex)) break;
+        }
+    }
+    return tex;
+}
+
+static void PumpTextureStreaming(size_t budget) {
+    auto& queue = TextureStreamQueue();
+    auto& queued = TextureStreamQueuedSet();
+    auto& cache = BsiTextureCache();
+    while (budget-- > 0 && !queue.empty()) {
+        std::string stem = queue.front();
+        queue.pop_front();
+        queued.erase(stem);
+        if (cache.find(stem) != cache.end()) continue;
+        BsiPreviewTexture tex = LoadTextureByStemSync(stem);
+        if (cache.size() >= kMaxTextureCacheEntries) cache.clear();
+        cache.insert({ stem, std::move(tex) });
+    }
+}
+
+static const BsiPreviewTexture* TryGetTextureByStem(const std::string& stemIn, bool* outPending = nullptr) {
     std::string stem = NormalizeTextureStem(stemIn);
+    if (outPending) *outPending = false;
     if (stem.empty()) return nullptr;
+
     auto& cache = BsiTextureCache();
     auto it = cache.find(stem);
-    if (it == cache.end()) {
-        BsiPreviewTexture tex{};
-        std::vector<uint8_t> bytes;
-
-        std::ifstream tf("batspire/bsi_extracted/" + stem + ".BSI", std::ios::binary);
-        if (tf) {
-            tf.seekg(0, std::ios::end);
-            size_t n = (size_t)tf.tellg();
-            tf.seekg(0, std::ios::beg);
-            if (n > 0 && n <= kMaxBsiBytes) {
-                bytes.resize(n);
-                tf.read(reinterpret_cast<char*>(bytes.data()), (std::streamsize)n);
-                if (tf.good() || tf.eof()) TryDecodeBsiFromAnyOffset(bytes, tex);
-            }
-        }
-
-        if (tex.indices.empty()) {
-            const std::string name = stem + ".BSI";
-            for (const auto* arc : TextureSourceArchives()) {
-                if (!arc) continue;
-                const auto* e = arc->FindEntryCaseInsensitive(name);
-                if (!e) continue;
-                std::wstring err;
-                std::vector<uint8_t> arcBytes;
-                if (!arc->ReadEntryData(*e, arcBytes, &err)) continue;
-                if (arcBytes.size() > kMaxBsiBytes) continue;
-                if (TryDecodeBsiFromAnyOffset(arcBytes, tex)) break;
-            }
-        }
-
-        if (cache.size() >= kMaxTextureCacheEntries) cache.clear();
-        it = cache.insert({ stem, std::move(tex) }).first;
+    if (it != cache.end()) {
+        if (it->second.indices.empty()) return nullptr;
+        return &it->second;
     }
-    if (it->second.indices.empty()) return nullptr;
-    return &it->second;
+
+    auto& queued = TextureStreamQueuedSet();
+    if (queued.insert(stem).second) {
+        TextureStreamQueue().push_back(stem);
+    }
+    if (outPending) *outPending = true;
+    return nullptr;
 }
 
 static const BsiPreviewTexture* TryGetTextureForFace(const std::array<uint8_t, 6>& tag, const std::string& stemHint) {
@@ -466,22 +504,28 @@ static const BsiPreviewTexture* TryGetTextureForFace(const std::array<uint8_t, 6
 
     const bool zeroTag = (tagHex == "000000000000");
 
+    bool deferred = false;
+
     if (!zeroTag) {
         const auto& bound = BoundTagToStem();
         auto bt = bound.find(tagHex);
         if (bt != bound.end()) {
-            if (const auto* t = TryGetTextureByStem(bt->second)) {
+            bool pending = false;
+            if (const auto* t = TryGetTextureByStem(bt->second, &pending)) {
                 resolveCache[resolveKey] = bt->second;
                 return t;
             }
+            deferred = deferred || pending;
         }
     }
 
     if (!stemHint.empty()) {
-        if (const auto* t = TryGetTextureByStem(stemHint)) {
+        bool pending = false;
+        if (const auto* t = TryGetTextureByStem(stemHint, &pending)) {
             resolveCache[resolveKey] = stemHint;
             return t;
         }
+        deferred = deferred || pending;
     }
 
     if (!zeroTag) {
@@ -490,10 +534,12 @@ static const BsiPreviewTexture* TryGetTextureForFace(const std::array<uint8_t, 6
         if (ft != families.end()) {
             size_t tried = 0;
             for (const auto& stem : ft->second) {
-                if (const auto* t = TryGetTextureByStem(stem)) {
+                bool pending = false;
+                if (const auto* t = TryGetTextureByStem(stem, &pending)) {
                     resolveCache[resolveKey] = stem;
                     return t;
                 }
+                deferred = deferred || pending;
                 if (++tried >= 8) break;
             }
         }
@@ -505,16 +551,18 @@ static const BsiPreviewTexture* TryGetTextureForFace(const std::array<uint8_t, 6
         if (fi != inv.end()) {
             size_t tried = 0;
             for (const auto& stem : fi->second) {
-                if (const auto* t = TryGetTextureByStem(stem)) {
+                bool pending = false;
+                if (const auto* t = TryGetTextureByStem(stem, &pending)) {
                     resolveCache[resolveKey] = stem;
                     return t;
                 }
+                deferred = deferred || pending;
                 if (++tried >= 8) break;
             }
         }
     }
 
-    if (!zeroTag) resolveCache[resolveKey] = kMissResolveStem;
+    if (!zeroTag && !deferred) resolveCache[resolveKey] = kMissResolveStem;
     return nullptr;
 }
 
@@ -664,6 +712,7 @@ struct LevelPreviewState {
     bool bilinearSampling = false;
     bool wireframeMode = false;
     bool renderDirectX = false;
+    float drawDistance = 200000.0f;
     LevelPreviewBackBuffer backBuffer;
     ULONGLONG lastTickMs = 0;
     ULONGLONG fpsWindowStartMs = 0;
@@ -674,6 +723,40 @@ struct LevelPreviewState {
 
 static constexpr float kLevelPreviewNearZ = 24.0f;
 static constexpr float kLevelPreviewFarZ = 200000.0f;
+static constexpr float kLevelPreviewDrawDistanceStep = 2000.0f;
+static constexpr float kLevelPreviewDrawDistanceMin = 2000.0f;
+
+static COLORREF ModulateColor(COLORREF c, float lightScale) {
+    const float s = std::clamp(lightScale, 0.0f, 2.0f);
+    const uint8_t r = uint8_t(std::clamp(int(float(GetRValue(c)) * s + 0.5f), 0, 255));
+    const uint8_t g = uint8_t(std::clamp(int(float(GetGValue(c)) * s + 0.5f), 0, 255));
+    const uint8_t b = uint8_t(std::clamp(int(float(GetBValue(c)) * s + 0.5f), 0, 255));
+    return RGB(r, g, b);
+}
+
+static float ComputeDirectXBasicLight(const PreviewFace& face) {
+    if (face.worldPoints.size() < 3) return 1.0f;
+    const auto& a = face.worldPoints[0];
+    const auto& b = face.worldPoints[1];
+    const auto& c = face.worldPoints[2];
+    const float ux = float(b.x - a.x), uy = float(b.y - a.y), uz = float(b.z - a.z);
+    const float vx = float(c.x - a.x), vy = float(c.y - a.y), vz = float(c.z - a.z);
+    float nx = uy * vz - uz * vy;
+    float ny = uz * vx - ux * vz;
+    float nz = ux * vy - uy * vx;
+    const float len = sqrtf(nx * nx + ny * ny + nz * nz);
+    if (len < 1e-4f || !std::isfinite(len)) return 1.0f;
+    nx /= len; ny /= len; nz /= len;
+
+    // Basic DirectX-style directional + ambient term.
+    constexpr float lx = -0.35f;
+    constexpr float ly = -0.65f;
+    constexpr float lz = 0.67f;
+    const float ndotl = std::max(0.0f, nx * lx + ny * ly + nz * lz);
+    const float ambient = 0.35f;
+    const float diffuse = 0.90f;
+    return ambient + diffuse * ndotl;
+}
 
 struct PreviewVertex {
     float x{};
@@ -755,7 +838,8 @@ static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, floa
     float vx = 0.0f, vy = 0.0f, vz = 0.0f;
     if (!TransformToView(s, x, y, z, vx, vy, vz)) return false;
 
-    if (vz < kLevelPreviewNearZ || vz > kLevelPreviewFarZ) return false;
+    const float maxZ = std::clamp(s.drawDistance, kLevelPreviewDrawDistanceMin, kLevelPreviewFarZ);
+    if (vz < kLevelPreviewNearZ || vz > maxZ) return false;
     float safeZ = std::max(kLevelPreviewNearZ, vz);
 
     float focal = (float)std::min(w, h) * 0.7f;
@@ -808,6 +892,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         std::array<uint8_t, 6> textureTag{};
         std::string textureStemHint;
         bool hasUvTexture{ false };
+        float lightScale{ 1.0f };
         float avgDepth{};
         COLORREF color{};
     };
@@ -823,8 +908,12 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         df.textureTag = face.textureTag;
         df.textureStemHint = face.textureStemHint;
         df.hasUvTexture = face.hasUvTexture;
+        df.lightScale = s.renderDirectX ? ComputeDirectXBasicLight(face) : 1.0f;
         std::vector<PreviewVertex> poly;
         poly.reserve(face.worldPoints.size());
+        const float maxDrawDistance = std::clamp(s.drawDistance, kLevelPreviewDrawDistanceMin, kLevelPreviewFarZ);
+        float minFaceZ = 1.0e30f;
+        float maxFaceZ = -1.0e30f;
         for (size_t i = 0; i < face.worldPoints.size(); ++i) {
             const auto& wp = face.worldPoints[i];
             float vx = 0.0f, vy = 0.0f, vz = 0.0f;
@@ -836,6 +925,8 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
             pv.x = vx;
             pv.y = vy;
             pv.z = vz;
+            minFaceZ = std::min(minFaceZ, vz);
+            maxFaceZ = std::max(maxFaceZ, vz);
             if (face.hasUvTexture && i < face.uvs.size()) {
                 pv.u = face.uvs[i].u;
                 pv.v = face.uvs[i].v;
@@ -844,9 +935,11 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         }
 
         if (poly.size() < 3) continue;
+        if (!std::isfinite(minFaceZ) || !std::isfinite(maxFaceZ)) continue;
+        if (maxFaceZ < kLevelPreviewNearZ || minFaceZ > maxDrawDistance) continue;
         poly = ClipPolygonAgainstZPlane(poly, kLevelPreviewNearZ, true);
         if (poly.size() < 3) continue;
-        poly = ClipPolygonAgainstZPlane(poly, kLevelPreviewFarZ, false);
+        poly = ClipPolygonAgainstZPlane(poly, maxDrawDistance, false);
         if (poly.size() < 3) continue;
 
         df.pts.reserve(poly.size());
@@ -950,7 +1043,9 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                         float v = (w0 * viz0 + w1 * viz1 + w2 * viz2) / iz;
                         if (!std::isfinite(u) || !std::isfinite(v)) continue;
 
-                        uint32_t sampled = toBgr32(SampleTextureColor(*tex, u, v, s.bilinearSampling));
+                        COLORREF sampledColor = SampleTextureColor(*tex, u, v, s.bilinearSampling);
+                        if (s.renderDirectX) sampledColor = ModulateColor(sampledColor, df.lightScale);
+                        uint32_t sampled = toBgr32(sampledColor);
                         for (int oy = 0; oy < pixelStep; ++oy) {
                             int py = y + oy;
                             if (py > maxy || py >= h) break;
@@ -1002,7 +1097,8 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                         if (zidx >= zBuffer.size()) continue;
                         if (z >= zBuffer[zidx]) continue;
 
-                        uint32_t flat = toBgr32(df.color);
+                        COLORREF flatColor = s.renderDirectX ? ModulateColor(df.color, df.lightScale) : df.color;
+                        uint32_t flat = toBgr32(flatColor);
                         for (int oy = 0; oy < pixelStep; ++oy) {
                             int py = y + oy;
                             if (py > maxy || py >= h) break;
@@ -1068,8 +1164,9 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         L"  light A/B " + std::to_wstring(s.scene->ambient) + L"/" + std::to_wstring(s.scene->brightness) +
         L"  LITD/LITS " + std::to_wstring(s.scene->litdCount) + L"/" + std::to_wstring(s.scene->litsCount) +
         L"  FLAD/FLAS " + std::to_wstring(s.scene->fladCount) + L"/" + std::to_wstring(s.scene->flasCount) +
-        L"  RAWD " + std::to_wstring(s.scene->rawdCount) + fpsBuf +
-        L"  (WASD move, Shift 6x, Q/E vertical, click+drag rotate, B: Toggle Bilinear, F: Toggle Wireframe, R: Render DirectX " + std::wstring(s.renderDirectX ? L"ON" : L"OFF") + L")";
+        L"  RAWD " + std::to_wstring(s.scene->rawdCount) +
+        L"  Draw " + std::to_wstring((int)std::clamp(s.drawDistance, kLevelPreviewDrawDistanceMin, kLevelPreviewFarZ)) + fpsBuf +
+        L"  (WASD move, Shift 6x, Q/E vertical, click+drag rotate, B: Bilinear, F: Wireframe, R: DirectX " + std::wstring(s.renderDirectX ? L"ON" : L"OFF") + L", I/K: Draw +/-)";
     DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
 }
 
@@ -1114,6 +1211,14 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         if (s && (wParam == 'B' || wParam == 'b')) { s->bilinearSampling = !s->bilinearSampling; InvalidateRect(hwnd, nullptr, FALSE); }
         if (s && (wParam == 'F' || wParam == 'f')) { s->wireframeMode = !s->wireframeMode; InvalidateRect(hwnd, nullptr, FALSE); }
         if (s && (wParam == 'R' || wParam == 'r')) { s->renderDirectX = !s->renderDirectX; InvalidateRect(hwnd, nullptr, FALSE); }
+        if (s && (wParam == 'I' || wParam == 'i')) {
+            s->drawDistance = std::min(kLevelPreviewFarZ, s->drawDistance + kLevelPreviewDrawDistanceStep);
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        if (s && (wParam == 'K' || wParam == 'k')) {
+            s->drawDistance = std::max(kLevelPreviewDrawDistanceMin, s->drawDistance - kLevelPreviewDrawDistanceStep);
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
         return 0;
     case WM_KEYUP:
         if (s && wParam < s->keys.size()) {
@@ -1152,6 +1257,10 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         return 0;
     case WM_TIMER:
         if (s) {
+            const size_t pendingBefore = TextureStreamQueue().size();
+            PumpTextureStreaming(2);
+            const bool streamed = TextureStreamQueue().size() < pendingBefore;
+
             ULONGLONG nowMs = GetTickCount64();
             ULONGLONG dtMsU = (s->lastTickMs > 0 && nowMs >= s->lastTickMs) ? (nowMs - s->lastTickMs) : 16;
             s->lastTickMs = nowMs;
@@ -1167,7 +1276,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             if (s->keys['D']) { s->camX += fy * speed; s->camZ -= fx * speed; moved = true; }
             if (s->keys['Q']) { s->camY += speed; moved = true; }
             if (s->keys['E']) { s->camY -= speed; moved = true; }
-            if (moved) InvalidateRect(hwnd, nullptr, FALSE);
+            if (moved || streamed) InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
     case WM_ERASEBKGND:
