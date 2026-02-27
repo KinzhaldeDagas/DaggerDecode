@@ -401,13 +401,16 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
             size_t n = 0;
             while (n < 260 && src[n] != '\0') ++n;
             if (n == 0) continue;
-            outList.modelNames.push_back(normalizeModelName(std::string(src, src + n)));
+            std::string model = normalizeModelName(std::string(src, src + n));
+            if (!model.empty()) outList.modelNames.push_back(std::move(model));
         }
     };
 
     auto parseObjd = [&](const uint8_t* payload, uint32_t len, const ObjTemplateList& templates) {
         Bs6ModelInstance inst{};
         bool hasIdfi = false;
+        bool idfiOutOfRange = false;
+        uint32_t idfiValue = 0;
 
         size_t p = 0;
         while (p + 8 <= len) {
@@ -419,10 +422,12 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
             const uint8_t* c = payload + p + 8;
 
             if (name == "IDFI" && clen >= 4) {
-                uint32_t id = ReadU32(c);
-                if (id < templates.modelNames.size()) {
-                    inst.modelName = normalizeModelName(templates.modelNames[id]);
+                idfiValue = ReadU32(c);
+                if (idfiValue < templates.modelNames.size()) {
+                    inst.modelName = normalizeModelName(templates.modelNames[idfiValue]);
                     hasIdfi = !inst.modelName.empty();
+                } else {
+                    idfiOutOfRange = true;
                 }
             }
             else if (name == "POSI" && clen >= 12) {
@@ -441,6 +446,8 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
 
         if (hasIdfi && !inst.modelName.empty()) {
             out.models.push_back(std::move(inst));
+        } else if (idfiOutOfRange) {
+            out.unresolvedModelNames.push_back("idfi:" + std::to_string(idfiValue));
         }
     };
 
@@ -449,16 +456,30 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
         return false;
     }
 
-    std::unordered_set<std::string> groupNames = {
+    static const std::unordered_set<std::string> groupNames = {
         "GNRL", "TEXI", "STRU", "SNAP", "VIEW", "CTRL", "LINK", "OBJS", "OBJD", "LITS", "LITD", "FLAS", "FLAD"
     };
 
-    std::function<bool(size_t, size_t, ObjTemplateList*)> walk = [&](size_t start, size_t end, ObjTemplateList* inheritedTemplates) -> bool {
+    static constexpr size_t kMaxChunkCount = 500000;
+    static constexpr size_t kMaxWalkDepth = 64;
+    size_t parsedChunkCount = 0;
+
+    std::function<bool(size_t, size_t, ObjTemplateList*, size_t)> walk = [&](size_t start, size_t end, ObjTemplateList* inheritedTemplates, size_t depth) -> bool {
+        if (depth > kMaxWalkDepth) {
+            if (err) *err = L"BS6 scene parse exceeded maximum nested chunk depth.";
+            return false;
+        }
+
         size_t p = start;
         ObjTemplateList localTemplates;
         ObjTemplateList* activeTemplates = inheritedTemplates;
 
         while (p + 8 <= end) {
+            if (++parsedChunkCount > kMaxChunkCount) {
+                if (err) *err = L"BS6 scene parse exceeded maximum chunk count.";
+                return false;
+            }
+
             const uint8_t* h = bytes.data() + p;
             std::string name(reinterpret_cast<const char*>(h), reinterpret_cast<const char*>(h) + 4);
             uint32_t len = ReadU32(h + 4);
@@ -470,18 +491,16 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
 
             const uint8_t* payload = bytes.data() + p + 8;
             if (name == "POSI" && len >= 12) {
-                Int3 m{ readI32(payload + 0), readI32(payload + 4), readI32(payload + 8) };
-                out.markers.push_back(m);
+                out.markers.push_back({ readI32(payload + 0), readI32(payload + 4), readI32(payload + 8) });
             }
             else if (name == "BBOX" && len >= 24) {
                 Bs6SceneBox b{};
                 if (len >= 72) {
                     for (size_t i = 0; i < 6; ++i) {
-                        b.corners[i].x = readI32(payload + i * 12 + 0);
-                        b.corners[i].y = readI32(payload + i * 12 + 4);
-                        b.corners[i].z = readI32(payload + i * 12 + 8);
+                        b.corners[i] = { readI32(payload + i * 12 + 0), readI32(payload + i * 12 + 4), readI32(payload + i * 12 + 8) };
                     }
-                } else {
+                }
+                else {
                     Int3 a{ readI32(payload + 0), readI32(payload + 4), readI32(payload + 8) };
                     Int3 c{ readI32(payload + 12), readI32(payload + 16), readI32(payload + 20) };
                     b.corners[0] = a;
@@ -491,7 +510,7 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
                     b.corners[4] = c;
                     b.corners[5] = { a.x, c.y, c.z };
                 }
-                out.boxes.push_back(b);
+                out.boxes.push_back(std::move(b));
             }
             else if (name == "LFIL") {
                 parseLfil(payload, len, localTemplates);
@@ -503,10 +522,8 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
 
             if (groupNames.find(name) != groupNames.end()) {
                 ObjTemplateList* childTemplates = activeTemplates;
-                if (name == "OBJS") {
-                    childTemplates = &localTemplates;
-                }
-                if (!walk(p + 8, next, childTemplates)) return false;
+                if (name == "OBJS") childTemplates = &localTemplates;
+                if (!walk(p + 8, next, childTemplates, depth + 1)) return false;
             }
 
             p = next;
@@ -520,7 +537,12 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
         return true;
     };
 
-    if (!walk(0, bytes.size(), nullptr)) return false;
+    if (!walk(0, bytes.size(), nullptr, 0)) return false;
+
+    if (!out.unresolvedModelNames.empty()) {
+        std::sort(out.unresolvedModelNames.begin(), out.unresolvedModelNames.end());
+        out.unresolvedModelNames.erase(std::unique(out.unresolvedModelNames.begin(), out.unresolvedModelNames.end()), out.unresolvedModelNames.end());
+    }
 
     if (out.markers.empty() && out.boxes.empty() && out.models.empty()) {
         if (err) *err = L"BS6 scene contains no parseable markers, boxes, or models.";
@@ -544,6 +566,13 @@ bool B3dMesh::TryParse(const std::vector<uint8_t>& bytes, B3dMesh& out, std::wst
     uint32_t pointListOffset = ReadU32(bytes.data() + 48);
     uint32_t planeListOffset = ReadU32(bytes.data() + 60);
 
+    static constexpr uint32_t kMaxReasonablePoints = 1u << 20;
+    static constexpr uint32_t kMaxReasonablePlanes = 1u << 20;
+    if (pointCount > kMaxReasonablePoints || planeCount > kMaxReasonablePlanes) {
+        if (err) *err = L"3D mesh counts are unreasonably large.";
+        return false;
+    }
+
     memcpy(out.version, bytes.data(), 4);
     out.version[4] = '\0';
 
@@ -561,7 +590,7 @@ bool B3dMesh::TryParse(const std::vector<uint8_t>& bytes, B3dMesh& out, std::wst
         out.points.push_back({ static_cast<int32_t>(ReadU32(p + 0)), static_cast<int32_t>(ReadU32(p + 4)), static_cast<int32_t>(ReadU32(p + 8)) });
     }
 
-    struct PlaneDataRef { std::array<uint8_t,6> textureTag{}; };
+    struct PlaneDataRef { std::array<uint8_t, 6> textureTag{}; };
     std::vector<PlaneDataRef> planeData;
     planeData.reserve(planeCount);
     for (uint32_t i = 0; i < planeCount; ++i) {
@@ -573,6 +602,8 @@ bool B3dMesh::TryParse(const std::vector<uint8_t>& bytes, B3dMesh& out, std::wst
 
     size_t planeCursor = planeListOffset;
     out.faces.reserve(planeCount);
+
+    size_t discardedInvalidFaces = 0;
     for (uint32_t i = 0; i < planeCount; ++i) {
         if (planeCursor + 10 > bytes.size()) {
             if (err) *err = L"3D plane list truncated in header section.";
@@ -590,18 +621,43 @@ bool B3dMesh::TryParse(const std::vector<uint8_t>& bytes, B3dMesh& out, std::wst
         B3dFace face{};
         face.textureTag = planeData[i].textureTag;
         face.pointIndices.reserve(pointPerPlane);
+
+        bool invalidRef = false;
         for (size_t j = 0; j < pointPerPlane; ++j) {
             const uint8_t* pp = bytes.data() + planeCursor + 10 + j * 8u;
             uint32_t pointByteOffset = ReadU32(pp);
+            if ((pointByteOffset % 12u) != 0u) {
+                invalidRef = true;
+                break;
+            }
             uint32_t pointId = pointByteOffset / 12u;
-            if (pointId < out.points.size()) face.pointIndices.push_back(pointId);
+            if (pointId >= out.points.size()) {
+                invalidRef = true;
+                break;
+            }
+            face.pointIndices.push_back(pointId);
         }
 
-        if (face.pointIndices.size() >= 3) out.faces.push_back(std::move(face));
+        if (!invalidRef && face.pointIndices.size() >= 3) {
+            out.faces.push_back(std::move(face));
+        } else {
+            discardedInvalidFaces++;
+        }
+
         planeCursor = next;
     }
 
-    return !out.points.empty() && !out.faces.empty();
+    if (out.points.empty() || out.faces.empty()) {
+        if (err) *err = L"3D mesh did not yield valid points/faces.";
+        return false;
+    }
+
+    if (discardedInvalidFaces == planeCount) {
+        if (err) *err = L"3D mesh discarded all faces due to invalid point references.";
+        return false;
+    }
+
+    return true;
 }
 
 bool B3dFileSummary::TryParse(const std::vector<uint8_t>& bytes, B3dFileSummary& out, std::wstring* err) {
