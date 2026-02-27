@@ -11,6 +11,8 @@
 #include <string_view>
 #include <vector>
 #include <array>
+#include <map>
+#include <regex>
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
