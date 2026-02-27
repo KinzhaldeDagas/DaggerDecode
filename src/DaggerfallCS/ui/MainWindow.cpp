@@ -122,21 +122,67 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         drawLine3(c[5], c[1]); drawLine3(c[5], c[2]); drawLine3(c[5], c[3]);
     }
 
-    for (const auto& face : s.scene->modelFaces) {
+    struct DrawFace {
         std::vector<POINT> pts;
-        pts.reserve(face.worldPoints.size());
+        float avgDepth{};
+        COLORREF color{};
+    };
+    std::vector<DrawFace> drawFaces;
+    drawFaces.reserve(s.scene->modelFaces.size());
+
+    auto depthFor = [&](float x, float y, float z, float& outDepth) -> bool {
+        float dx = x - s.camX;
+        float dy = y - s.camY;
+        float dz = z - s.camZ;
+        float cy = cosf(s.yaw), sy = sinf(s.yaw);
+        float cp = cosf(s.pitch), sp = sinf(s.pitch);
+        float x1 = cy * dx - sy * dz;
+        float z1 = sy * dx + cy * dz;
+        float y1 = cp * dy - sp * z1;
+        float z2 = sp * dy + cp * z1;
+        (void)x1; (void)y1;
+        outDepth = z2;
+        return z2 >= 1.0f;
+    };
+
+    for (const auto& face : s.scene->modelFaces) {
+        if (face.worldPoints.size() < 3) continue;
+
+        DrawFace df{};
+        df.color = face.color;
+        df.pts.reserve(face.worldPoints.size());
+
+        float depthSum = 0.0f;
+        bool clipped = false;
         for (const auto& wp : face.worldPoints) {
             POINT p{};
-            if (!ProjectPoint(s, w, h, (float)wp.x, (float)wp.y, (float)wp.z, p)) continue;
-            pts.push_back(p);
+            float d = 0.0f;
+            if (!ProjectPoint(s, w, h, (float)wp.x, (float)wp.y, (float)wp.z, p) || !depthFor((float)wp.x, (float)wp.y, (float)wp.z, d)) {
+                clipped = true;
+                break;
+            }
+            depthSum += d;
+            df.pts.push_back(p);
         }
-        if (pts.size() < 3) continue;
 
-        HPEN facePen = CreatePen(PS_SOLID, 1, face.color);
-        HBRUSH faceBrush = CreateSolidBrush(RGB(GetRValue(face.color) / 5, GetGValue(face.color) / 5, GetBValue(face.color) / 5));
+        if (clipped || df.pts.size() < 3) continue;
+        df.avgDepth = depthSum / (float)df.pts.size();
+        drawFaces.push_back(std::move(df));
+    }
+
+    std::stable_sort(drawFaces.begin(), drawFaces.end(), [](const DrawFace& a, const DrawFace& b) {
+        return a.avgDepth > b.avgDepth;
+    });
+
+    for (const auto& df : drawFaces) {
+        const COLORREF fill = df.color;
+        const COLORREF outline = RGB(GetRValue(df.color) / 2, GetGValue(df.color) / 2, GetBValue(df.color) / 2);
+
+        HPEN facePen = CreatePen(PS_SOLID, 1, outline);
+        HBRUSH faceBrush = CreateSolidBrush(fill);
         HGDIOBJ oldPen = SelectObject(hdc, facePen);
         HGDIOBJ oldBrush = SelectObject(hdc, faceBrush);
-        Polygon(hdc, pts.data(), (int)pts.size());
+        Polygon(hdc, df.pts.data(), (int)df.pts.size());
         SelectObject(hdc, oldPen);
         SelectObject(hdc, oldBrush);
         DeleteObject(facePen);
