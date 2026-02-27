@@ -29,6 +29,198 @@ static std::wstring ToLowerCopy(std::wstring s) {
 static constexpr UINT IDM_BSA_DIALOGUE_SPEAK = 42001;
 static constexpr UINT IDM_BSA_ENTRY_SPEAK = 42002;
 
+static constexpr UINT WM_LVL_SET_SCENE = WM_APP + 120;
+
+struct LevelPreviewScene {
+    std::vector<battlespire::Int3> markers;
+    std::vector<battlespire::Bs6SceneBox> boxes;
+    std::wstring label;
+};
+
+struct LevelPreviewState {
+    HWND hwnd{};
+    std::unique_ptr<LevelPreviewScene> scene;
+    std::wstring status = L"Awaiting.....";
+    float camX = 0.0f;
+    float camY = 1600.0f;
+    float camZ = -3000.0f;
+    float yaw = 0.0f;
+    float pitch = 0.1f;
+    bool dragging = false;
+    POINT lastMouse{};
+    std::array<bool, 256> keys{};
+};
+
+static void DrawTextBottomRight(HDC hdc, RECT rc, const std::wstring& text, COLORREF color) {
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, color);
+    RECT tr = rc;
+    tr.right -= 10;
+    tr.bottom -= 10;
+    DrawTextW(hdc, text.c_str(), -1, &tr, DT_RIGHT | DT_BOTTOM | DT_SINGLELINE);
+}
+
+static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, float y, float z, POINT& out) {
+    float dx = x - s.camX;
+    float dy = y - s.camY;
+    float dz = z - s.camZ;
+
+    float cy = cosf(s.yaw), sy = sinf(s.yaw);
+    float cp = cosf(s.pitch), sp = sinf(s.pitch);
+
+    float x1 = cy * dx - sy * dz;
+    float z1 = sy * dx + cy * dz;
+    float y1 = cp * dy - sp * z1;
+    float z2 = sp * dy + cp * z1;
+
+    if (z2 < 1.0f) return false;
+    float focal = (float)std::min(w, h) * 0.7f;
+    out.x = int(w * 0.5f + (x1 / z2) * focal);
+    out.y = int(h * 0.5f - (y1 / z2) * focal);
+    return true;
+}
+
+static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
+    HBRUSH bg = CreateSolidBrush(RGB(0, 0, 0));
+    FillRect(hdc, &rc, bg);
+    DeleteObject(bg);
+
+    if (!s.scene) {
+        DrawTextBottomRight(hdc, rc, s.status, RGB(180, 180, 180));
+        return;
+    }
+
+    int w = rc.right - rc.left;
+    int h = rc.bottom - rc.top;
+
+    HPEN penBox = CreatePen(PS_SOLID, 1, RGB(60, 180, 255));
+    HPEN penPoint = CreatePen(PS_SOLID, 1, RGB(220, 220, 90));
+
+    auto drawLine3 = [&](const battlespire::Int3& a, const battlespire::Int3& b) {
+        POINT pa{}, pb{};
+        if (!ProjectPoint(s, w, h, (float)a.x, (float)a.y, (float)a.z, pa)) return;
+        if (!ProjectPoint(s, w, h, (float)b.x, (float)b.y, (float)b.z, pb)) return;
+        MoveToEx(hdc, pa.x, pa.y, nullptr);
+        LineTo(hdc, pb.x, pb.y);
+    };
+
+    SelectObject(hdc, penBox);
+    for (const auto& box : s.scene->boxes) {
+        const auto& c = box.corners;
+        drawLine3(c[0], c[1]); drawLine3(c[0], c[2]); drawLine3(c[0], c[3]);
+        drawLine3(c[4], c[1]); drawLine3(c[4], c[2]); drawLine3(c[4], c[3]);
+        drawLine3(c[5], c[1]); drawLine3(c[5], c[2]); drawLine3(c[5], c[3]);
+    }
+
+    SelectObject(hdc, penPoint);
+    for (const auto& m : s.scene->markers) {
+        POINT p{};
+        if (!ProjectPoint(s, w, h, (float)m.x, (float)m.y, (float)m.z, p)) continue;
+        Rectangle(hdc, p.x - 2, p.y - 2, p.x + 2, p.y + 2);
+    }
+
+    DeleteObject(penBox);
+    DeleteObject(penPoint);
+
+    std::wstring msg = s.scene->label + L"  (WASD move, click+drag rotate)";
+    DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
+}
+
+static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    auto* s = reinterpret_cast<LevelPreviewState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    switch (msg) {
+    case WM_CREATE: {
+        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        s = reinterpret_cast<LevelPreviewState*>(cs->lpCreateParams);
+        s->hwnd = hwnd;
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)s);
+        SetTimer(hwnd, 1, 16, nullptr);
+        return 0;
+    }
+    case WM_DESTROY:
+        KillTimer(hwnd, 1);
+        return 0;
+    case WM_NCDESTROY:
+        if (s) {
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+            delete s;
+        }
+        return 0;
+    case WM_LVL_SET_SCENE:
+        if (s) {
+            std::unique_ptr<LevelPreviewScene> scene(reinterpret_cast<LevelPreviewScene*>(wParam));
+            s->scene = std::move(scene);
+            if (s->scene) {
+                s->status = L"Loaded";
+            }
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+    case WM_KEYDOWN:
+        if (s && wParam < s->keys.size()) s->keys[wParam] = true;
+        return 0;
+    case WM_KEYUP:
+        if (s && wParam < s->keys.size()) s->keys[wParam] = false;
+        return 0;
+    case WM_LBUTTONDOWN:
+        if (s) {
+            SetFocus(hwnd);
+            SetCapture(hwnd);
+            s->dragging = true;
+            s->lastMouse.x = GET_X_LPARAM(lParam);
+            s->lastMouse.y = GET_Y_LPARAM(lParam);
+        }
+        return 0;
+    case WM_LBUTTONUP:
+        if (s) {
+            s->dragging = false;
+            ReleaseCapture();
+        }
+        return 0;
+    case WM_MOUSEMOVE:
+        if (s && s->dragging) {
+            POINT p{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            int dx = p.x - s->lastMouse.x;
+            int dy = p.y - s->lastMouse.y;
+            s->lastMouse = p;
+            s->yaw += dx * 0.005f;
+            s->pitch -= dy * 0.005f;
+            if (s->pitch > 1.5f) s->pitch = 1.5f;
+            if (s->pitch < -1.5f) s->pitch = -1.5f;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+    case WM_TIMER:
+        if (s) {
+            float speed = 50.0f;
+            float fy = cosf(s->yaw), fx = sinf(s->yaw);
+            if (s->keys['W']) { s->camX += fx * speed; s->camZ += fy * speed; }
+            if (s->keys['S']) { s->camX -= fx * speed; s->camZ -= fy * speed; }
+            if (s->keys['A']) { s->camX -= fy * speed; s->camZ += fx * speed; }
+            if (s->keys['D']) { s->camX += fy * speed; s->camZ -= fx * speed; }
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT:
+        if (s) {
+            PAINTSTRUCT ps{};
+            HDC hdc = BeginPaint(hwnd, &ps);
+            RECT rc{};
+            GetClientRect(hwnd, &rc);
+            DrawLevelScene(*s, hdc, rc);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        break;
+    default:
+        break;
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+
 
 struct DialogueCodeParts {
     std::wstring speaker;
@@ -189,6 +381,39 @@ static bool IsLikelyUtf8Printable(const std::vector<uint8_t>& bytes) {
         else printable++;
     }
     return control * 8 < sample;
+}
+
+
+static std::wstring BuildBs6SummaryPreview(const battlespire::Bs6FileSummary& s) {
+    std::wstring out = L"BS6 level summary\r\n";
+    out += L"Chunks: " + std::to_wstring(s.chunks.size()) + L"\r\n\r\n";
+    const size_t show = std::min<size_t>(s.chunks.size(), 128);
+    for (size_t i = 0; i < show; ++i) {
+        wchar_t line[256]{};
+        std::wstring name = winutil::WidenUtf8(s.chunks[i].name);
+        swprintf_s(line, L"%03zu  %s  len=%u\r\n", i, name.c_str(), (unsigned)s.chunks[i].length);
+        out += line;
+    }
+    if (s.chunks.size() > show) out += L"...\r\n";
+    return out;
+}
+
+static std::wstring BuildB3dSummaryPreview(const battlespire::B3dFileSummary& s) {
+    std::wstring out = L"3D model summary\r\n";
+    out += L"Version: ";
+    out += winutil::WidenUtf8(s.version);
+    out += L"\r\n";
+    out += L"Points: " + std::to_wstring(s.pointCount) + L"\r\n";
+    out += L"Planes: " + std::to_wstring(s.planeCount) + L"\r\n";
+    out += L"Objects: " + std::to_wstring(s.objectCount) + L"\r\n";
+    out += L"Radius: " + std::to_wstring(s.radius) + L"\r\n\r\n";
+
+    wchar_t line[128]{};
+    swprintf_s(line, L"pointListOffset: 0x%X\r\n", (unsigned)s.pointListOffset); out += line;
+    swprintf_s(line, L"normalListOffset: 0x%X\r\n", (unsigned)s.normalListOffset); out += line;
+    swprintf_s(line, L"planeDataOffset: 0x%X\r\n", (unsigned)s.planeDataOffset); out += line;
+    swprintf_s(line, L"planeListOffset: 0x%X\r\n", (unsigned)s.planeListOffset); out += line;
+    return out;
 }
 
 static std::wstring HexDumpPreview(const std::vector<uint8_t>& bytes, size_t maxBytes = 256) {
@@ -835,6 +1060,20 @@ bool MainWindow::OnCreate() {
     m_status = CreateWindowExW(0, STATUSCLASSNAMEW, nullptr,
         WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, m_hwnd, (HMENU)(INT_PTR)IDC_STATUS_BAR, GetModuleHandleW(nullptr), nullptr);
 
+    WNDCLASSW wc{};
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = L"DaggerfallCS_LevelPreview";
+    wc.lpfnWndProc = LevelPreviewWndProc;
+    wc.hCursor = LoadCursorW(nullptr, IDC_CROSS);
+    wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    RegisterClassW(&wc);
+
+    auto* previewState = new LevelPreviewState();
+    m_levelPreview = CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"Level Preview",
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        CW_USEDEFAULT, CW_USEDEFAULT, 960, 640,
+        m_hwnd, nullptr, GetModuleHandleW(nullptr), previewState);
+
     m_splitLR.Attach(m_hwnd, m_tree, m_list);
     m_splitLR.SetRatio(0.28);
 
@@ -857,6 +1096,10 @@ bool MainWindow::OnCreate() {
 void MainWindow::OnDestroy() {
     EndListPreviewEdit(true);
     SaveIndicesOverrides();
+    if (m_levelPreview && IsWindow(m_levelPreview)) {
+        DestroyWindow(m_levelPreview);
+        m_levelPreview = nullptr;
+    }
     PostQuitMessage(0);
 }
 
@@ -925,6 +1168,20 @@ void MainWindow::OnCommand(WORD id) {
 
 void MainWindow::SetStatus(const std::wstring& s) {
     winutil::SetStatusText(m_status, s);
+}
+
+
+void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const std::wstring& label) {
+    if (!m_levelPreview || !IsWindow(m_levelPreview)) return;
+
+    auto payload = std::make_unique<LevelPreviewScene>();
+    payload->label = label;
+    if (scene) {
+        payload->markers = scene->markers;
+        payload->boxes = scene->boxes;
+    }
+
+    PostMessageW(m_levelPreview, WM_LVL_SET_SCENE, (WPARAM)payload.release(), 0);
 }
 
 void MainWindow::PopulateTree() {
@@ -1049,6 +1306,8 @@ void MainWindow::StartTreeBuild() {
             };
 
             const bool isFlcBsa = (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"FLC.BSA") == 0);
+            const bool isBs6Bsa = (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"BS6.BSA") == 0);
+            const bool is3dBsa = (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"3D.BSA") == 0);
             if (isFlcBsa) {
                 std::vector<size_t> dialogueFlc;
                 std::vector<size_t> otherFlc;
@@ -1082,6 +1341,29 @@ void MainWindow::StartTreeBuild() {
 
                 insCat(L"Dialogue Voice Clips", dialogueFlc);
                 insCat(L"Other FLC Audio", otherFlc);
+                continue;
+            }
+
+            if (isBs6Bsa || is3dBsa) {
+                std::vector<size_t> sorted;
+                sorted.reserve(a.entries.size());
+                for (size_t ei = 0; ei < a.entries.size(); ++ei) sorted.push_back(ei);
+                std::stable_sort(sorted.begin(), sorted.end(), [&](size_t lhs, size_t rhs) {
+                    std::wstring ln = BaseNameOnly(winutil::WidenUtf8(a.entries[lhs].name));
+                    std::wstring rn = BaseNameOnly(winutil::WidenUtf8(a.entries[rhs].name));
+                    return ln < rn;
+                });
+
+                std::wstring cat = isBs6Bsa ? L"Level Files (.BS6)" : L"Model Files (.3D)";
+                cat += L" (" + std::to_wstring(sorted.size()) + L")";
+
+                TVINSERTSTRUCTW cins{};
+                cins.hParent = ah;
+                cins.hInsertAfter = TVI_LAST;
+                cins.item.mask = TVIF_TEXT;
+                cins.item.pszText = const_cast<wchar_t*>(cat.c_str());
+                HTREEITEM ch = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&cins);
+                for (size_t ei : sorted) insertEntryNode(ch, ei);
                 continue;
             }
 
@@ -1700,6 +1982,8 @@ void MainWindow::OnTreeSelChanged() {
     auto* p = GetSelectedPayload();
     if (!p) return;
 
+    SendLevelToPreview(nullptr, L"Awaiting.....");
+
     m_bsaDialogueKind = BsaDialogueKind::None;
     m_bsaDialogueRows.clear();
     m_bsaDialogueHeaders.clear();
@@ -1808,6 +2092,38 @@ void MainWindow::OnTreeSelChanged() {
 
         std::wstring preview;
         bool renderedTable = false;
+
+        std::wstring entryNameLower = ToLowerWs(winutil::WidenUtf8(e.name));
+        bool looksLikeBs6 = EndsWithWs(entryNameLower, L".bs6");
+        bool looksLike3d = EndsWithWs(entryNameLower, L".3d");
+        if (looksLikeBs6) {
+            battlespire::Bs6FileSummary bs6;
+            std::wstring perr;
+            if (battlespire::Bs6FileSummary::TrySummarize(bytes, bs6, &perr)) {
+                SetWindowTextW(m_preview, BuildBs6SummaryPreview(bs6).c_str());
+
+                battlespire::Bs6Scene scene;
+                std::wstring serr;
+                if (battlespire::Bs6Scene::TryBuildFromBytes(bytes, scene, &serr)) {
+                    SendLevelToPreview(&scene, winutil::WidenUtf8(e.name));
+                } else {
+                    SendLevelToPreview(nullptr, L"Awaiting.....");
+                }
+
+                m_viewMode = ViewMode::BsaEntry;
+                return;
+            }
+        }
+        else if (looksLike3d) {
+            battlespire::B3dFileSummary b3d;
+            std::wstring perr;
+            if (battlespire::B3dFileSummary::TryParse(bytes, b3d, &perr)) {
+                SetWindowTextW(m_preview, BuildB3dSummaryPreview(b3d).c_str());
+                m_viewMode = ViewMode::BsaEntry;
+                return;
+            }
+        }
+
         if (IsLikelyUtf8Printable(bytes)) {
             std::wstring nameLow = ToLowerWs(winutil::WidenUtf8(e.name));
             std::string text(bytes.begin(), bytes.end());

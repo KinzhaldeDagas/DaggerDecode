@@ -321,4 +321,168 @@ bool FlcFile::LoadFromFile(const std::filesystem::path& filePath, FlcFile& out, 
     return true;
 }
 
+bool Bs6FileSummary::TrySummarize(const std::vector<uint8_t>& bytes, Bs6FileSummary& out, std::wstring* err) {
+    out = {};
+
+    if (bytes.size() < 8) {
+        if (err) *err = L"BS6 payload is too small.";
+        return false;
+    }
+
+    size_t p = 0;
+    while (p + 8 <= bytes.size()) {
+        const uint8_t* h = bytes.data() + p;
+        char tag[5]{};
+        memcpy(tag, h, 4);
+        uint32_t len = ReadU32(h + 4);
+
+        if (len > bytes.size() - (p + 8)) {
+            if (err) *err = L"BS6 chunk length points outside payload bounds.";
+            return false;
+        }
+
+        Bs6ChunkInfo c{};
+        c.name.assign(tag, tag + 4);
+        c.length = len;
+        out.chunks.push_back(std::move(c));
+
+        p += 8 + size_t(len);
+    }
+
+    if (p != bytes.size()) {
+        if (err) *err = L"BS6 payload has trailing bytes after final chunk.";
+        return false;
+    }
+
+    out.valid = !out.chunks.empty();
+    if (!out.valid) {
+        if (err) *err = L"BS6 payload did not contain any chunks.";
+        return false;
+    }
+
+    return true;
+}
+
+
+bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& out, std::wstring* err) {
+    out = {};
+
+    auto readI32 = [](const uint8_t* p) -> int32_t {
+        return static_cast<int32_t>(ReadU32(p));
+    };
+
+    static const std::unordered_set<std::string> kGroupChunks = {
+        "GNRL", "TEXI", "STRU", "SNAP", "VIEW", "CTRL", "LINK", "OBJS", "OBJD", "LITS", "LITD", "FLAS", "FLAD"
+    };
+
+    std::function<bool(size_t, size_t)> walk = [&](size_t start, size_t end) -> bool {
+        size_t p = start;
+        while (p + 8 <= end) {
+            const uint8_t* h = bytes.data() + p;
+            std::string name(reinterpret_cast<const char*>(h), reinterpret_cast<const char*>(h) + 4);
+            uint32_t len = ReadU32(h + 4);
+            size_t next = p + 8 + size_t(len);
+            if (next > end) {
+                if (err) *err = L"BS6 scene parse exceeded payload bounds.";
+                return false;
+            }
+
+            const uint8_t* payload = bytes.data() + p + 8;
+            if (name == "POSI" && len >= 12) {
+                Int3 m{};
+                m.x = readI32(payload + 0);
+                m.y = readI32(payload + 4);
+                m.z = readI32(payload + 8);
+                out.markers.push_back(m);
+            }
+            else if (name == "BBOX" && len >= 72) {
+                Bs6SceneBox b{};
+                for (size_t i = 0; i < 6; ++i) {
+                    b.corners[i].x = readI32(payload + i * 12 + 0);
+                    b.corners[i].y = readI32(payload + i * 12 + 4);
+                    b.corners[i].z = readI32(payload + i * 12 + 8);
+                }
+                out.boxes.push_back(b);
+            }
+
+            if (kGroupChunks.find(name) != kGroupChunks.end()) {
+                if (!walk(p + 8, next)) return false;
+            }
+
+            p = next;
+        }
+
+        if (p != end) {
+            if (err) *err = L"BS6 scene parse encountered trailing bytes.";
+            return false;
+        }
+
+        return true;
+    };
+
+    if (bytes.size() < 8) {
+        if (err) *err = L"BS6 scene payload is too small.";
+        return false;
+    }
+
+    if (!walk(0, bytes.size())) return false;
+
+    if (out.markers.empty() && out.boxes.empty()) {
+        if (err) *err = L"BS6 scene contains no POSI/BBOX blocks.";
+        return false;
+    }
+
+    return true;
+}
+
+bool B3dFileSummary::TryParse(const std::vector<uint8_t>& bytes, B3dFileSummary& out, std::wstring* err) {
+    out = {};
+
+    // tools/3dtool uses a 64-byte header: <4s15I.
+    if (bytes.size() < 64) {
+        if (err) *err = L"3D payload is too small for header.";
+        return false;
+    }
+
+    memcpy(out.version, bytes.data(), 4);
+    out.version[4] = '\0';
+
+    out.pointCount = ReadU32(bytes.data() + 4);
+    out.planeCount = ReadU32(bytes.data() + 8);
+    out.radius = ReadU32(bytes.data() + 12);
+    out.planeDataOffset = ReadU32(bytes.data() + 24);
+    out.objectCount = ReadU32(bytes.data() + 32);
+    out.pointListOffset = ReadU32(bytes.data() + 48);
+    out.normalListOffset = ReadU32(bytes.data() + 52);
+    out.planeListOffset = ReadU32(bytes.data() + 60);
+
+    auto inBounds = [&](uint32_t off, size_t bytesNeeded) -> bool {
+        return off <= bytes.size() && bytesNeeded <= bytes.size() - off;
+    };
+
+    if (!inBounds(out.pointListOffset, size_t(out.pointCount) * 12u)) {
+        if (err) *err = L"3D point list extends outside payload bounds.";
+        return false;
+    }
+
+    // normals are 24 bytes per plane in tool reference.
+    if (!inBounds(out.normalListOffset, size_t(out.planeCount) * 24u)) {
+        if (err) *err = L"3D normal list extends outside payload bounds.";
+        return false;
+    }
+
+    if (!inBounds(out.planeDataOffset, size_t(out.planeCount) * 24u)) {
+        if (err) *err = L"3D plane data list extends outside payload bounds.";
+        return false;
+    }
+
+    if (!inBounds(out.planeListOffset, 0)) {
+        if (err) *err = L"3D plane list offset is outside payload bounds.";
+        return false;
+    }
+
+    out.valid = true;
+    return true;
+}
+
 } // namespace battlespire
