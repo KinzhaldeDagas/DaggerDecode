@@ -312,11 +312,11 @@ static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, floa
     if (z2 < 1.0f || z2 > 200000.0f) return false;
     float focal = (float)std::min(w, h) * 0.7f;
     float sx = (x1 / z2) * focal;
-    float sy = (y1 / z2) * focal;
-    if (!std::isfinite(sx) || !std::isfinite(sy)) return false;
-    if (fabsf(sx) > 200000.0f || fabsf(sy) > 200000.0f) return false;
+    float syProj = (y1 / z2) * focal;
+    if (!std::isfinite(sx) || !std::isfinite(syProj)) return false;
+    if (fabsf(sx) > 200000.0f || fabsf(syProj) > 200000.0f) return false;
     out.x = int(w * 0.5f + sx);
-    out.y = int(h * 0.5f - sy);
+    out.y = int(h * 0.5f - syProj);
     return true;
 }
 
@@ -417,10 +417,15 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                 const POINT p0 = df.pts[0], p1 = df.pts[ti], p2 = df.pts[ti + 1];
                 const POINT t0 = df.uvs[0], t1 = df.uvs[ti], t2 = df.uvs[ti + 1];
 
-                int minx = std::max(0, std::min({ p0.x, p1.x, p2.x }));
-                int maxx = std::min(w - 1, std::max({ p0.x, p1.x, p2.x }));
-                int miny = std::max(0, std::min({ p0.y, p1.y, p2.y }));
-                int maxy = std::min(h - 1, std::max({ p0.y, p1.y, p2.y }));
+                LONG triMinX = std::min(std::min(p0.x, p1.x), p2.x);
+                LONG triMaxX = std::max(std::max(p0.x, p1.x), p2.x);
+                LONG triMinY = std::min(std::min(p0.y, p1.y), p2.y);
+                LONG triMaxY = std::max(std::max(p0.y, p1.y), p2.y);
+
+                int minx = std::max(0, (int)triMinX);
+                int maxx = std::min(w - 1, (int)triMaxX);
+                int miny = std::max(0, (int)triMinY);
+                int maxy = std::min(h - 1, (int)triMaxY);
 
                 float den = float((p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y));
                 if (fabsf(den) < 1e-5f) continue;
