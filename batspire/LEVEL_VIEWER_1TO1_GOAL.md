@@ -6,6 +6,7 @@ Build a **1:1 in-app Battlespire level viewer** where BS6 levels render with mod
 ## Current state (from repository + extracted corpus)
 
 - We can now parse BS6 chunk streams and 3D meshes and render a simplified interactive preview.
+- Status note: level rendering is now active end-to-end, but remaining parity defects include occasional disappearing polygons near the camera plane, some model faces missing due to incomplete decode/bindings, and blocky mid-distance output when adaptive raster stepping is engaged.
 - Scene/model parsing in extracted BS6 corpus is rich and highly nested under `GNRL/OBJS/OBJD/...`.
 - Quick corpus scan across `batspire/BS6_extracted` + `batspire/3D_extracted`:
   - BS6 files scanned: **45**
@@ -50,7 +51,7 @@ Build a **1:1 in-app Battlespire level viewer** where BS6 levels render with mod
 
 - [x] Identify Battlespire texture-container candidates (TEXI DIRN + BSI inventory baselined in Phase 2 artifacts).
 - [~] Map 3D face texture tags to concrete texture resources (seed + conservative unique-family auto-bindings generated; broad manual review still pending).
-- [~] Implement software texture rasterization in viewer (bound-BSI decode path + UV triangle raster now active in preview with nearest/bilinear toggle (`B`) and perspective-correct UV interpolation; texture fetch now falls back to loaded BSA archives when `bsi_extracted` misses stems; parity/material matching still pending).
+- [~] Implement software texture rasterization in viewer (bound-BSI decode path + UV triangle raster now active in preview with nearest/bilinear toggle (`B`) and perspective-correct UV interpolation; texture fetch now falls back to loaded BSA archives when `bsi_extracted` misses stems; near/far polygon clipping is now applied before projection to reduce disappearing polys; parity/material matching still pending).
 
 **Exit criteria**: Faces display actual texture content (not hash colors) for >95% of corpus meshes.
 

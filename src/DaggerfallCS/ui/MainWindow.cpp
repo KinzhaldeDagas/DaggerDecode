@@ -667,6 +667,56 @@ struct LevelPreviewState {
     float fps = 0.0f;
 };
 
+static constexpr float kLevelPreviewNearZ = 24.0f;
+static constexpr float kLevelPreviewFarZ = 200000.0f;
+
+struct PreviewVertex {
+    float x{};
+    float y{};
+    float z{};
+    float u{};
+    float v{};
+};
+
+static PreviewVertex LerpPreviewVertex(const PreviewVertex& a, const PreviewVertex& b, float t) {
+    PreviewVertex out{};
+    out.x = a.x + (b.x - a.x) * t;
+    out.y = a.y + (b.y - a.y) * t;
+    out.z = a.z + (b.z - a.z) * t;
+    out.u = a.u + (b.u - a.u) * t;
+    out.v = a.v + (b.v - a.v) * t;
+    return out;
+}
+
+static std::vector<PreviewVertex> ClipPolygonAgainstZPlane(const std::vector<PreviewVertex>& in, float planeZ, bool keepGreater) {
+    std::vector<PreviewVertex> out;
+    if (in.size() < 3) return out;
+    out.reserve(in.size() + 2);
+
+    auto inside = [&](const PreviewVertex& v) {
+        return keepGreater ? (v.z >= planeZ) : (v.z <= planeZ);
+    };
+
+    for (size_t i = 0; i < in.size(); ++i) {
+        const PreviewVertex& cur = in[i];
+        const PreviewVertex& prev = in[(i + in.size() - 1) % in.size()];
+        bool curIn = inside(cur);
+        bool prevIn = inside(prev);
+
+        if (curIn != prevIn) {
+            float dz = cur.z - prev.z;
+            if (fabsf(dz) > 1e-6f) {
+                float t = (planeZ - prev.z) / dz;
+                out.push_back(LerpPreviewVertex(prev, cur, std::clamp(t, 0.0f, 1.0f)));
+            }
+        }
+
+        if (curIn) out.push_back(cur);
+    }
+
+    return out;
+}
+
 static void DrawTextBottomRight(HDC hdc, RECT rc, const std::wstring& text, COLORREF color) {
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, color);
@@ -704,8 +754,8 @@ static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, floa
     float vx = 0.0f, vy = 0.0f, vz = 0.0f;
     if (!TransformToView(s, x, y, z, vx, vy, vz)) return false;
 
-    if (vz < -64.0f || vz > 200000.0f) return false;
-    float safeZ = std::max(0.05f, vz);
+    if (vz < kLevelPreviewNearZ || vz > kLevelPreviewFarZ) return false;
+    float safeZ = std::max(kLevelPreviewNearZ, vz);
 
     float focal = (float)std::min(w, h) * 0.7f;
     float sx = (vx / safeZ) * focal;
@@ -733,14 +783,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     s.backBuffer.ResetFrame();
     auto& colorBuffer = s.backBuffer.color;
     auto& zBuffer = s.backBuffer.depth;
-    bool movementActive = IsMovementInputActive(s);
-    int pixelStep = movementActive ? 2 : 1;
-    if (s.fps > 0.0f) {
-        if (s.fps < 10.0f) pixelStep = std::max(pixelStep, 5);
-        else if (s.fps < 18.0f) pixelStep = std::max(pixelStep, 4);
-        else if (s.fps < 24.0f) pixelStep = std::max(pixelStep, 3);
-        else if (s.fps < 30.0f) pixelStep = std::max(pixelStep, 2);
-    }
+    int pixelStep = 1;
 
     auto toBgr32 = [](COLORREF c) -> uint32_t {
         return (uint32_t(GetRValue(c)) << 16) | (uint32_t(GetGValue(c)) << 8) | uint32_t(GetBValue(c));
@@ -770,14 +813,6 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     std::vector<DrawFace> drawFaces;
     drawFaces.reserve(s.scene->modelFaces.size());
 
-    auto depthFor = [&](float x, float y, float z, float& outDepth) -> bool {
-        float vx = 0.0f, vy = 0.0f, vz = 0.0f;
-        (void)vy;
-        if (!TransformToView(s, x, y, z, vx, vy, vz)) return false;
-        if (vz < -64.0f || vz > 200000.0f) return false;
-        outDepth = std::max(0.05f, vz);
-        return true;
-    };
 
     for (const auto& face : s.scene->modelFaces) {
         if (face.worldPoints.size() < 3) continue;
@@ -787,23 +822,58 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         df.textureTag = face.textureTag;
         df.textureStemHint = face.textureStemHint;
         df.hasUvTexture = face.hasUvTexture;
-        df.pts.reserve(face.worldPoints.size());
-        df.depths.reserve(face.worldPoints.size());
-        if (face.hasUvTexture) df.uvs = face.uvs;
+        std::vector<PreviewVertex> poly;
+        poly.reserve(face.worldPoints.size());
+        for (size_t i = 0; i < face.worldPoints.size(); ++i) {
+            const auto& wp = face.worldPoints[i];
+            float vx = 0.0f, vy = 0.0f, vz = 0.0f;
+            if (!TransformToView(s, (float)wp.x, (float)wp.y, (float)wp.z, vx, vy, vz)) {
+                poly.clear();
+                break;
+            }
+            PreviewVertex pv{};
+            pv.x = vx;
+            pv.y = vy;
+            pv.z = vz;
+            if (face.hasUvTexture && i < face.uvs.size()) {
+                pv.u = (float)face.uvs[i].x;
+                pv.v = (float)face.uvs[i].y;
+            }
+            poly.push_back(pv);
+        }
+
+        if (poly.size() < 3) continue;
+        poly = ClipPolygonAgainstZPlane(poly, kLevelPreviewNearZ, true);
+        if (poly.size() < 3) continue;
+        poly = ClipPolygonAgainstZPlane(poly, kLevelPreviewFarZ, false);
+        if (poly.size() < 3) continue;
+
+        df.pts.reserve(poly.size());
+        df.depths.reserve(poly.size());
+        df.uvs.reserve(poly.size());
 
         float depthSum = 0.0f;
-        for (const auto& wp : face.worldPoints) {
+        bool projectedAny = false;
+        for (const auto& pv : poly) {
+            if (!std::isfinite(pv.x) || !std::isfinite(pv.y) || !std::isfinite(pv.z)) continue;
+            float focal = (float)std::min(w, h) * 0.7f;
+            float sx = (pv.x / pv.z) * focal;
+            float syProj = (pv.y / pv.z) * focal;
+            if (!std::isfinite(sx) || !std::isfinite(syProj)) continue;
             POINT p{};
-            float d = 0.0f;
-            if (!ProjectPoint(s, w, h, (float)wp.x, (float)wp.y, (float)wp.z, p) || !depthFor((float)wp.x, (float)wp.y, (float)wp.z, d)) {
-                continue;
-            }
+            p.x = int(w * 0.5f + sx);
+            p.y = int(h * 0.5f - syProj);
+
+            float d = pv.z;
             depthSum += d;
+            projectedAny = true;
             df.pts.push_back(p);
             df.depths.push_back(d);
+            if (face.hasUvTexture) df.uvs.push_back({ (LONG)pv.u, (LONG)pv.v });
         }
 
         if (df.pts.size() < 3) continue;
+        if (!projectedAny) continue;
         if (df.uvs.size() != df.pts.size()) {
             df.hasUvTexture = false;
             df.uvs.clear();
