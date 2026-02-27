@@ -178,6 +178,7 @@ private:
 
     void ShowBsaDialogueRowPreview(int row);
     void OnBsaDialogueListContextMenu(LPARAM lParam);
+    void OnTreeContextMenu(LPARAM lParam);
     bool BuildFlcSpeakTargetFromListClick(int row, int subItem, FlcSpeakTarget& out) const;
     void CmdSpeakBsaDialogueLine(const FlcSpeakTarget& target);
     void CmdSpeakSelectedFlcEntry();

@@ -272,6 +272,47 @@ static std::wstring BaseNameOnly(const std::wstring& name) {
     return ToLowerWs(leaf);
 }
 
+static std::wstring MakeSafeTempLeaf(std::wstring name) {
+    for (auto& c : name) {
+        if (c == L'/' || c == L'\\' || c == L':' || c == L'*' || c == L'?' || c == L'"' || c == L'<' || c == L'>' || c == L'|') c = L'_';
+    }
+    return name;
+}
+
+static bool WriteTempFlcAndLaunch(HWND owner, const std::wstring& leafName, const std::vector<uint8_t>& normalizedFlc, std::wstring* launchedPath, std::wstring* err) {
+    std::filesystem::path out = std::filesystem::temp_directory_path() / (L"DaggerfallCS_" + MakeSafeTempLeaf(leafName));
+
+    std::ofstream f(out, std::ios::binary);
+    if (!f) {
+        if (err) *err = L"Failed to write temporary FLC file.";
+        return false;
+    }
+    if (!normalizedFlc.empty()) f.write(reinterpret_cast<const char*>(normalizedFlc.data()), (std::streamsize)normalizedFlc.size());
+    f.close();
+
+    auto tryOpen = [&](const wchar_t* file, const wchar_t* params) -> bool {
+        HINSTANCE h = ShellExecuteW(owner, L"open", file, params, nullptr, SW_SHOWNORMAL);
+        return (INT_PTR)h > 32;
+    };
+
+    if (tryOpen(out.c_str(), nullptr)) {
+        if (launchedPath) *launchedPath = out.wstring();
+        return true;
+    }
+
+    const std::wstring quoted = L"\"" + out.wstring() + L"\"";
+    if (tryOpen(L"ffplay", (L"-autoexit -nodisp " + quoted).c_str()) ||
+        tryOpen(L"mpv", (L"--force-window=yes " + quoted).c_str()) ||
+        tryOpen(L"vlc", quoted.c_str())) {
+        if (launchedPath) *launchedPath = out.wstring();
+        return true;
+    }
+
+    if (launchedPath) *launchedPath = out.wstring();
+    if (err) *err = L"Could not launch an FLC player. Tried file association and ffplay/mpv/vlc.";
+    return false;
+}
+
 static std::wstring ClassifyTxtBsaEntryCategory(const std::string& entryNameUtf8) {
     std::wstring name = BaseNameOnly(winutil::WidenUtf8(entryNameUtf8));
 
@@ -2629,7 +2670,7 @@ void MainWindow::OnBsaDialogueListContextMenu(LPARAM lParam) {
         AppendMenuW(h, MF_STRING, IDM_BSA_DIALOGUE_SPEAK, label.c_str());
     }
     if (hasEntrySpeak) {
-        AppendMenuW(h, MF_STRING, IDM_BSA_ENTRY_SPEAK, L"Speak file audio");
+        AppendMenuW(h, MF_STRING, IDM_BSA_ENTRY_SPEAK, L"Speak");
     }
 
     SetForegroundWindow(m_hwnd);
@@ -2639,6 +2680,50 @@ void MainWindow::OnBsaDialogueListContextMenu(LPARAM lParam) {
     if (cmd == IDM_BSA_DIALOGUE_SPEAK) {
         CmdSpeakBsaDialogueLine(target);
     } else if (cmd == IDM_BSA_ENTRY_SPEAK) {
+        CmdSpeakSelectedFlcEntry();
+    }
+}
+
+void MainWindow::OnTreeContextMenu(LPARAM lParam) {
+    POINT pt{};
+    pt.x = GET_X_LPARAM(lParam);
+    pt.y = GET_Y_LPARAM(lParam);
+
+    if (pt.x != -1 && pt.y != -1) {
+        TVHITTESTINFO ht{};
+        ht.pt = pt;
+        ScreenToClient(m_tree, &ht.pt);
+        HTREEITEM hit = TreeView_HitTest(m_tree, &ht);
+        if (!hit) return;
+        TreeView_SelectItem(m_tree, hit);
+    } else {
+        HTREEITEM sel = TreeView_GetSelection(m_tree);
+        if (!sel) return;
+        RECT rc{};
+        if (!TreeView_GetItemRect(m_tree, sel, &rc, TRUE)) return;
+        pt.x = rc.left + 8;
+        pt.y = rc.top + 8;
+        ClientToScreen(m_tree, &pt);
+    }
+
+    auto* p = GetSelectedPayload();
+    if (!p || p->kind != TreePayload::Kind::BsaEntry || p->bsaArchiveIndex >= m_bsaArchives.size()) return;
+
+    const auto& ar = m_bsaArchives[p->bsaArchiveIndex];
+    if (_wcsicmp(ar.sourcePath.filename().wstring().c_str(), L"FLC.BSA") != 0 || p->bsaEntryIndex >= ar.entries.size()) return;
+
+    std::wstring name = ToLowerWs(winutil::WidenUtf8(ar.entries[p->bsaEntryIndex].name));
+    if (!EndsWithWs(name, L".flc")) return;
+
+    HMENU h = CreatePopupMenu();
+    if (!h) return;
+    AppendMenuW(h, MF_STRING, IDM_BSA_ENTRY_SPEAK, L"Speak");
+
+    SetForegroundWindow(m_hwnd);
+    UINT cmd = TrackPopupMenu(h, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, m_hwnd, nullptr);
+    DestroyMenu(h);
+
+    if (cmd == IDM_BSA_ENTRY_SPEAK) {
         CmdSpeakSelectedFlcEntry();
     }
 }
@@ -2742,20 +2827,12 @@ void MainWindow::CmdSpeakBsaDialogueLine(const FlcSpeakTarget& target) {
     bool stripped = false;
     battlespire::FlcFile::NormalizeLeadingPrefix(bytes, stripped);
 
-    auto tempDir = std::filesystem::temp_directory_path();
-    std::filesystem::path out = tempDir / (L"DaggerfallCS_" + parts.speaker + L"_" + mode + L"_" + std::to_wstring(picked->variant) + L".flc");
-
-    std::ofstream f(out, std::ios::binary);
-    if (!f) {
-        MessageBoxW(m_hwnd, L"Failed to write temporary FLC file.", L"Speak", MB_OK | MB_ICONERROR);
-        return;
-    }
-    if (!bytes.empty()) f.write(reinterpret_cast<const char*>(bytes.data()), (std::streamsize)bytes.size());
-    f.close();
-
-    HINSTANCE h = ShellExecuteW(m_hwnd, L"open", out.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-    if ((INT_PTR)h <= 32) {
-        std::wstring msg = L"Could not open FLC clip in the default viewer. File saved to:\r\n" + out.wstring();
+    const std::wstring tempName = parts.speaker + L"_" + mode + L"_" + std::to_wstring(picked->variant) + L".flc";
+    std::wstring launchedPath;
+    std::wstring launchErr;
+    if (!WriteTempFlcAndLaunch(m_hwnd, tempName, bytes, &launchedPath, &launchErr)) {
+        std::wstring msg = launchErr.empty() ? L"Could not open FLC clip." : launchErr;
+        if (!launchedPath.empty()) msg += L"\r\nFile saved to:\r\n" + launchedPath;
         MessageBoxW(m_hwnd, msg.c_str(), L"Speak", MB_OK | MB_ICONWARNING);
         return;
     }
@@ -2765,7 +2842,6 @@ void MainWindow::CmdSpeakBsaDialogueLine(const FlcSpeakTarget& target) {
     if (stripped) st += L" (normalized)";
     SetStatus(st);
 }
-
 
 void MainWindow::CmdSpeakSelectedFlcEntry() {
     auto* p = GetSelectedPayload();
@@ -2792,23 +2868,11 @@ void MainWindow::CmdSpeakSelectedFlcEntry() {
     bool stripped = false;
     battlespire::FlcFile::NormalizeLeadingPrefix(bytes, stripped);
 
-    std::wstring safeName = BaseNameOnly(entryName);
-    for (auto& c : safeName) {
-        if (c == L'/' || c == L'\\' || c == L':' || c == L'*' || c == L'?' || c == L'"' || c == L'<' || c == L'>' || c == L'|') c = L'_';
-    }
-
-    std::filesystem::path out = std::filesystem::temp_directory_path() / (L"DaggerfallCS_" + safeName);
-    std::ofstream f(out, std::ios::binary);
-    if (!f) {
-        MessageBoxW(m_hwnd, L"Failed to write temporary FLC file.", L"Speak", MB_OK | MB_ICONERROR);
-        return;
-    }
-    if (!bytes.empty()) f.write(reinterpret_cast<const char*>(bytes.data()), (std::streamsize)bytes.size());
-    f.close();
-
-    HINSTANCE h = ShellExecuteW(m_hwnd, L"open", out.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-    if ((INT_PTR)h <= 32) {
-        std::wstring msg = L"Could not open FLC clip in the default viewer. File saved to:\r\n" + out.wstring();
+    std::wstring launchedPath;
+    std::wstring launchErr;
+    if (!WriteTempFlcAndLaunch(m_hwnd, BaseNameOnly(entryName), bytes, &launchedPath, &launchErr)) {
+        std::wstring msg = launchErr.empty() ? L"Could not open FLC clip." : launchErr;
+        if (!launchedPath.empty()) msg += L"\r\nFile saved to:\r\n" + launchedPath;
         MessageBoxW(m_hwnd, msg.c_str(), L"Speak", MB_OK | MB_ICONWARNING);
         return;
     }
@@ -3564,6 +3628,10 @@ LRESULT CALLBACK MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
     case WM_CONTEXTMENU:
         if ((HWND)wParam == self->m_list) {
             self->OnBsaDialogueListContextMenu(lParam);
+            return 0;
+        }
+        if ((HWND)wParam == self->m_tree) {
+            self->OnTreeContextMenu(lParam);
             return 0;
         }
         break;
