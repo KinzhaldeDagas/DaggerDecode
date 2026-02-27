@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "BattlespireFormats.h"
+#include <functional>
 
 namespace battlespire {
 

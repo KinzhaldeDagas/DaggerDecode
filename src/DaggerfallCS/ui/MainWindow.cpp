@@ -1442,11 +1442,11 @@ void MainWindow::StartTreeBuild() {
 
 
                 if (IsMagicCategoryName(cat)) {
-                    TVITEMW ti{};
-                    ti.mask = TVIF_PARAM | TVIF_HANDLE;
-                    ti.hItem = ch;
-                    ti.lParam = (LPARAM)AddPayload(TreePayload::Kind::BsaMagicCombined, 0, (size_t)-1, ai, (size_t)-1);
-                    TreeView_SetItem(m_tree, &ti);
+                    TVITEMW tvi{};
+                    tvi.mask = TVIF_PARAM | TVIF_HANDLE;
+                    tvi.hItem = ch;
+                    tvi.lParam = (LPARAM)AddPayload(TreePayload::Kind::BsaMagicCombined, 0, (size_t)-1, ai, (size_t)-1);
+                    TreeView_SetItem(m_tree, &tvi);
                     continue;
                 }
 
