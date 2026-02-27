@@ -1,0 +1,135 @@
+# Battlespire Level Viewer 1:1 Goal (Research + Implementation Plan)
+
+## Goal
+Build a **1:1 in-app Battlespire level viewer** where BS6 levels render with model placement, textures, lighting, and camera behavior matching original game output as closely as practical.
+
+## Current state (from repository + extracted corpus)
+
+- We can now parse BS6 chunk streams and 3D meshes and render a simplified interactive preview.
+- Scene/model parsing in extracted BS6 corpus is rich and highly nested under `GNRL/OBJS/OBJD/...`.
+- Quick corpus scan across `batspire/BS6_extracted` + `batspire/3D_extracted`:
+  - BS6 files scanned: **45**
+  - 3D model files scanned: **2395**
+  - LFIL references discovered: **3502**
+  - LFIL refs resolved to extracted `.3D` stems: **3456**
+  - unresolved unique stems: **45** (likely aliases, level-specific variants, or missing dumps)
+  - dominant chunks include `OBJD`, `IDFI`, `POSI`, `ANGS`, `SCAL`, `RAWD`, `FLAD`, `LITD`, `BRIT`, etc.
+
+### Major known gaps to reach 1:1
+
+1. **True texture sampling not implemented**
+   - Current renderer colors faces from texture tags, not sampled texels.
+   - Need texture archive decode + UV sampling pipeline.
+2. **Lighting model mismatch**
+   - BS6 light/ambient chunks (`LITD`, `BRIT`, `AMBI`) are parsed minimally.
+   - Need per-face/per-vertex lighting parity with engine behavior.
+3. **Material and blend behavior unknowns**
+   - `RAWD` and other opaque fields likely include material flags.
+4. **Transform parity**
+   - Euler conversion and scale semantics need verification against original orientation conventions.
+5. **Visibility/culling parity**
+   - Need near/far clipping and ordering behavior that matches game output.
+6. **Preview renderer stability / debug-color limitation**
+   - Current build can present mostly-purple debug faces and occasional geometry-line spikes when transformed vertices project to unstable screen coordinates.
+   - Added guardrails (transform/projection finite/range checks + less purple-biased debug hash colors), but true fix remains Phase 2 texture sampling + Phase 3 material decode.
+
+## 1:1 Milestone Plan
+
+## Phase 1 — Deterministic decode parity (data correctness)
+
+- [x] Build BS6/3D golden parser baselines from `_extracted` assets:
+  - validate object counts, IDFI mapping, transform ranges, and face counts.
+- [x] Expand RAWD research table (chunk-by-chunk lengths/counts and hypotheses).
+- [x] Add per-level diagnostics dump (JSON/CSV) for reproducible diffing.
+
+**Exit criteria**: Any BS6 from corpus produces stable, reproducible scene graph and mesh references.
+
+- Phase 1 validation harness: `tools/misc/batspire_phase1_golden_check.py` validates corpus signatures against `golden_parity_signatures.json`.
+
+## Phase 2 — Texture pipeline parity
+
+- [x] Identify Battlespire texture-container candidates (TEXI DIRN + BSI inventory baselined in Phase 2 artifacts).
+- [~] Map 3D face texture tags to concrete texture resources (seed + conservative unique-family auto-bindings generated; broad manual review still pending).
+- [~] Implement software texture rasterization in viewer (bound-BSI decode path + UV triangle raster (nearest sampling) now active in preview; bilinear and parity validation still pending).
+
+**Exit criteria**: Faces display actual texture content (not hash colors) for >95% of corpus meshes.
+
+## Phase 3 — Lighting/material parity
+
+- [ ] Decode `LITD`, `BRIT`, ambient terms and any material flags from RAWD.
+- [ ] Implement shading pass approximating original fixed-function math.
+- [ ] Add debug overlays for light volumes and active light contributors.
+
+**Exit criteria**: Visual brightness/color distribution matches reference captures on representative levels.
+
+## Phase 4 — Camera/culling/parity polish
+
+- [ ] Match camera FOV, projection, and movement feel to original scale.
+- [ ] Implement clipping/culling behavior and draw ordering parity.
+- [ ] Add screenshot A/B harness against extracted reference captures.
+
+**Exit criteria**: side-by-side snapshots are visually near-identical in geometry, textures, and lighting.
+
+## Phase 5 — UX + authoring workflow
+
+- [ ] Add toggles: wireframe, textures, lights, bounds, missing assets.
+- [ ] Add per-model inspector (source file, face count, texture IDs).
+- [ ] Add export of resolved scene graph and diagnostics package.
+
+**Exit criteria**: Level viewer is both research-grade and production-usable for content/debug workflows.
+
+## Immediate next implementation tasks
+
+1. Add parser/unit tests over a fixed BS6/3D fixture set (from `_extracted`).
+2. Wire unresolved-model reporting directly in UI with top missing stems.
+3. Build texture-tag inventory and link against texture archive candidates in `batspire/bsi_extracted`.
+4. Introduce a software raster path for textured triangles (offscreen DIB + blit).
+
+---
+
+This file is the project north-star for the level viewer: **full 1:1 output parity** with traceable milestones and measurable exit criteria.
+
+
+### Phase 1 artifacts (implemented)
+
+Generated by `tools/misc/batspire_phase1_decode_parity.py`:
+- `batspire/research_phase1/bs6_diagnostics.csv`
+- `batspire/research_phase1/b3d_diagnostics.csv`
+- `batspire/research_phase1/golden_parity_signatures.json`
+- `batspire/research_phase1/rawd_research_table.csv`
+
+- `batspire/research_phase1/PHASE1_ANALYSIS.md`
+
+
+### Phase 2 artifacts (implemented baseline)
+
+Generated by `tools/misc/batspire_phase2_texture_inventory.py`:
+- `batspire/research_phase2/bs6_texi_directories.csv`
+- `batspire/research_phase2/texture_tag_inventory.csv`
+- `batspire/research_phase2/bsi_filename_inventory.csv`
+- `batspire/research_phase2/phase2_texture_manifest.json`
+- `batspire/research_phase2/PHASE2_TEXTURE_INVENTORY.md`
+
+- `batspire/research_phase2/PHASE2_CSV_ANALYSIS.md`
+
+- `batspire/research_phase2/texture_tag_bindings.csv`
+- `batspire/research_phase2/phase2_binding_coverage.json`
+- `batspire/research_phase2/PHASE2_BINDING_SEED.md`
+
+- `batspire/research_phase2/texture_tag_bindings_family_candidates.csv`
+- `batspire/research_phase2/PHASE2_BINDING_ANALYSIS.md`
+
+- `batspire/research_phase2/texture_tag_binding_priority_top100.csv`
+- `batspire/research_phase2/PHASE2_BINDING_ACTION_PLAN.md`
+
+### Phase 3 artifacts (implemented baseline)
+
+Generated by `tools/misc/batspire_phase3_lighting_inventory.py`:
+- `batspire/research_phase3/lighting_chunk_inventory.csv`
+- `batspire/research_phase3/lighting_payload_lengths.csv`
+- `batspire/research_phase3/phase3_lighting_manifest.json`
+- `batspire/research_phase3/PHASE3_LIGHTING_ANALYSIS.md`
+- `batspire/research_phase3/phase3_payload_concentration.csv`
+- `batspire/research_phase3/phase3_decode_priority.csv`
+- `batspire/research_phase3/phase3_csv_analysis_summary.json`
+- `batspire/research_phase3/PHASE3_CSV_ANALYSIS.md`
