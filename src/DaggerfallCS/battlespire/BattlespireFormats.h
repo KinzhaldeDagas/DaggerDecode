@@ -58,4 +58,31 @@ struct FlcFile {
     static bool NormalizeLeadingPrefix(std::vector<uint8_t>& bytes, bool& strippedPrefix);
 };
 
+struct Bs6ChunkInfo {
+    std::string name;
+    uint32_t length{};
+};
+
+struct Bs6FileSummary {
+    bool valid{ false };
+    std::vector<Bs6ChunkInfo> chunks;
+
+    static bool TrySummarize(const std::vector<uint8_t>& bytes, Bs6FileSummary& out, std::wstring* err);
+};
+
+struct B3dFileSummary {
+    bool valid{ false };
+    char version[5]{};
+    uint32_t pointCount{};
+    uint32_t planeCount{};
+    uint32_t radius{};
+    uint32_t objectCount{};
+    uint32_t pointListOffset{};
+    uint32_t normalListOffset{};
+    uint32_t planeDataOffset{};
+    uint32_t planeListOffset{};
+
+    static bool TryParse(const std::vector<uint8_t>& bytes, B3dFileSummary& out, std::wstring* err);
+};
+
 } // namespace battlespire
