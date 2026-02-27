@@ -21,6 +21,228 @@ struct MainWindow::LoadResult {
 
 static const wchar_t* kWndClass = L"DaggerfallCS_MainWindow";
 static std::wstring HexU32(uint32_t v);
+static std::string TextureTagHex(const std::array<uint8_t, 6>& t) {
+    static const char* hexd = "0123456789abcdef";
+    std::string out;
+    out.resize(12);
+    for (size_t i = 0; i < 6; ++i) {
+        out[i * 2 + 0] = hexd[(t[i] >> 4) & 0xF];
+        out[i * 2 + 1] = hexd[t[i] & 0xF];
+    }
+    return out;
+}
+
+static std::unordered_map<std::string, std::string> LoadBoundTextureBindings() {
+    std::unordered_map<std::string, std::string> out;
+    std::ifstream f("batspire/research_phase2/texture_tag_bindings.csv", std::ios::binary);
+    if (!f) return out;
+
+    std::string line;
+    if (!std::getline(f, line)) return out;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        std::vector<std::string> cols;
+        std::string cur;
+        for (char c : line) {
+            if (c == ',') {
+                cols.push_back(cur);
+                cur.clear();
+            } else if (c != '\r' && c != '\n') {
+                cur.push_back(c);
+            }
+        }
+        cols.push_back(cur);
+        if (cols.size() < 3) continue;
+        const std::string& tag = cols[0];
+        const std::string& status = cols[1];
+        const std::string& stem = cols[2];
+        if (tag.size() != 12 || stem.empty()) continue;
+        if (status.rfind("bound_", 0) == 0) {
+            out[tag] = stem;
+        }
+    }
+    return out;
+}
+
+
+
+struct BsiPreviewTexture {
+    int width{};
+    int height{};
+    std::vector<uint8_t> indices;
+    std::array<COLORREF, 256> palette{};
+    bool hasPalette{ false };
+};
+
+static uint32_t ReadU32BE(const uint8_t* p) {
+    return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | uint32_t(p[3]);
+}
+
+static uint32_t ReadU32LE(const uint8_t* p) {
+    return (uint32_t(p[3]) << 24) | (uint32_t(p[2]) << 16) | (uint32_t(p[1]) << 8) | uint32_t(p[0]);
+}
+
+static uint16_t ReadU16LE(const uint8_t* p) {
+    return uint16_t(p[0]) | (uint16_t(p[1]) << 8);
+}
+
+static bool TryDecodeBsiPreviewTexture(const std::vector<uint8_t>& bytes, BsiPreviewTexture& out) {
+    out = {};
+    std::vector<uint8_t> hicl;
+    std::vector<uint8_t> cmap;
+    std::vector<uint8_t> data;
+    int width = 0, height = 0, frames = 1, flags = 0;
+
+    size_t i = 0;
+    while (i + 8 <= bytes.size()) {
+        const char* tag = reinterpret_cast<const char*>(bytes.data() + i);
+        uint32_t len = ReadU32BE(bytes.data() + i + 4);
+        size_t j = i + 8 + size_t(len);
+        if (j > bytes.size()) break;
+        const uint8_t* p = bytes.data() + i + 8;
+
+        if (memcmp(tag, "BHDR", 4) == 0 && len >= 30) {
+            width = int(ReadU16LE(p + 8));
+            height = int(ReadU16LE(p + 10));
+            frames = std::max(1, int(ReadU16LE(p + 18)));
+            flags = int(ReadU16LE(p + 28));
+        } else if (memcmp(tag, "HICL", 4) == 0) {
+            size_t off = (len >= 260 && ReadU32BE(p) == 256) ? 4 : 0;
+            if (len >= off + 256) hicl.assign(p + off, p + off + 256);
+        } else if (memcmp(tag, "CMAP", 4) == 0) {
+            size_t off = (len >= 772 && ReadU32BE(p) == 768) ? 4 : 0;
+            if (len >= off + 768) cmap.assign(p + off, p + off + 768);
+        } else if (memcmp(tag, "DATA", 4) == 0) {
+            size_t off = 0;
+            if (len >= 4) {
+                uint32_t n = ReadU32BE(p);
+                if (n <= len - 4) off = 4;
+            }
+            data.assign(p + off, p + len);
+        }
+
+        i = j;
+    }
+
+    if (width <= 0 || height <= 0 || data.empty()) return false;
+    const size_t rowCount = size_t(height) * size_t(std::max(1, frames));
+
+    if (flags == 0) {
+        size_t need = size_t(width) * rowCount;
+        if (data.size() < need) return false;
+        out.indices.assign(data.begin(), data.begin() + need);
+    } else if (flags == 4 || flags == 6) {
+        if (data.size() < rowCount * 4) return false;
+        out.indices.reserve(size_t(width) * rowCount);
+        for (size_t r = 0; r < rowCount; ++r) {
+            uint32_t idx = ReadU32LE(data.data() + r * 4);
+            bool compressed = (idx & 0x80000000u) != 0;
+            idx &= 0x7fffffffu;
+            if (idx >= data.size()) return false;
+            size_t cur = size_t(idx);
+            if (!compressed) {
+                if (cur + size_t(width) > data.size()) return false;
+                out.indices.insert(out.indices.end(), data.begin() + cur, data.begin() + cur + width);
+            } else {
+                int wrote = 0;
+                while (wrote < width && cur < data.size()) {
+                    uint8_t c = data[cur++];
+                    bool rle = (c & 0x80) != 0;
+                    int run = int(c & 0x7F);
+                    if (run <= 0) break;
+                    if (rle) {
+                        if (cur >= data.size()) return false;
+                        uint8_t pix = data[cur++];
+                        for (int k = 0; k < run && wrote < width; ++k, ++wrote) out.indices.push_back(pix);
+                    } else {
+                        if (cur + size_t(run) > data.size()) return false;
+                        for (int k = 0; k < run && wrote < width; ++k, ++wrote) out.indices.push_back(data[cur++]);
+                    }
+                }
+                if (wrote != width) return false;
+            }
+        }
+    } else {
+        return false;
+    }
+
+    out.width = width;
+    out.height = height * std::max(1, frames);
+
+    if (!hicl.empty()) {
+        out.hasPalette = true;
+        for (size_t pi = 0; pi < 128; ++pi) {
+            uint16_t c = ReadU16LE(hicl.data() + pi * 2);
+            uint8_t r = uint8_t(((c >> 11) & 0x1F) * 8);
+            uint8_t g = uint8_t(((c >> 6) & 0x1F) * 8);
+            uint8_t b = uint8_t(((c >> 1) & 0x1F) * 8);
+            out.palette[pi * 2] = RGB(r, g, b);
+            out.palette[pi * 2 + 1] = RGB(r, g, b);
+        }
+    } else if (cmap.size() >= 768) {
+        out.hasPalette = true;
+        for (size_t pi = 0; pi < 256; ++pi) {
+            uint8_t r = uint8_t(std::min(255, int(cmap[pi * 3 + 0]) * 4));
+            uint8_t g = uint8_t(std::min(255, int(cmap[pi * 3 + 1]) * 4));
+            uint8_t b = uint8_t(std::min(255, int(cmap[pi * 3 + 2]) * 4));
+            out.palette[pi] = RGB(r, g, b);
+        }
+    }
+
+    return !out.indices.empty();
+}
+
+
+static const std::unordered_map<std::string, std::string>& BoundTagToStem() {
+    static const auto s = LoadBoundTextureBindings();
+    return s;
+}
+
+static std::unordered_map<std::string, BsiPreviewTexture>& BsiTextureCache() {
+    static std::unordered_map<std::string, BsiPreviewTexture> s;
+    return s;
+}
+
+static const BsiPreviewTexture* TryGetTextureForTag(const std::array<uint8_t, 6>& tag) {
+    const std::string tagHex = TextureTagHex(tag);
+    const auto& bound = BoundTagToStem();
+    auto bt = bound.find(tagHex);
+    if (bt == bound.end()) return nullptr;
+
+    auto& cache = BsiTextureCache();
+    auto it = cache.find(bt->second);
+    if (it == cache.end()) {
+        BsiPreviewTexture tex{};
+        std::vector<uint8_t> bytes;
+        std::ifstream tf("batspire/bsi_extracted/" + bt->second + ".BSI", std::ios::binary);
+        if (tf) {
+            tf.seekg(0, std::ios::end);
+            size_t n = (size_t)tf.tellg();
+            tf.seekg(0, std::ios::beg);
+            bytes.resize(n);
+            if (n > 0) tf.read(reinterpret_cast<char*>(bytes.data()), (std::streamsize)n);
+            TryDecodeBsiPreviewTexture(bytes, tex);
+        }
+        it = cache.insert({ bt->second, std::move(tex) }).first;
+    }
+
+    if (it->second.indices.empty()) return nullptr;
+    return &it->second;
+}
+
+static COLORREF SampleTextureColor(const BsiPreviewTexture& tex, float u, float v) {
+    if (tex.indices.empty() || tex.width <= 0 || tex.height <= 0) return RGB(120, 120, 120);
+    int tx = int(floorf(u)) % tex.width;
+    int ty = int(floorf(v)) % tex.height;
+    if (tx < 0) tx += tex.width;
+    if (ty < 0) ty += tex.height;
+    size_t idxPos = size_t(ty) * size_t(tex.width) + size_t(tx);
+    if (idxPos >= tex.indices.size()) idxPos %= tex.indices.size();
+    uint8_t idx = tex.indices[idxPos];
+    if (tex.hasPalette) return tex.palette[idx];
+    uint8_t c = uint8_t(24 + (idx * 3) / 4);
+    return RGB(c, c, c);
+}
 
 static std::wstring ToLowerCopy(std::wstring s) {
     for (auto& c : s) c = (wchar_t)towlower(c);
@@ -34,6 +256,9 @@ static constexpr UINT WM_LVL_SET_SCENE = WM_APP + 120;
 
 struct PreviewFace {
     std::vector<battlespire::Int3> worldPoints;
+    std::vector<POINT> uvs;
+    std::array<uint8_t, 6> textureTag{};
+    bool hasUvTexture{ false };
     COLORREF color{ RGB(180, 180, 180) };
 };
 
@@ -83,10 +308,15 @@ static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, floa
     float y1 = cp * dy - sp * z1;
     float z2 = sp * dy + cp * z1;
 
-    if (z2 < 1.0f) return false;
+    if (!std::isfinite(x1) || !std::isfinite(y1) || !std::isfinite(z2)) return false;
+    if (z2 < 1.0f || z2 > 200000.0f) return false;
     float focal = (float)std::min(w, h) * 0.7f;
-    out.x = int(w * 0.5f + (x1 / z2) * focal);
-    out.y = int(h * 0.5f - (y1 / z2) * focal);
+    float sx = (x1 / z2) * focal;
+    float sy = (y1 / z2) * focal;
+    if (!std::isfinite(sx) || !std::isfinite(sy)) return false;
+    if (fabsf(sx) > 200000.0f || fabsf(sy) > 200000.0f) return false;
+    out.x = int(w * 0.5f + sx);
+    out.y = int(h * 0.5f - sy);
     return true;
 }
 
@@ -124,6 +354,9 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
 
     struct DrawFace {
         std::vector<POINT> pts;
+        std::vector<POINT> uvs;
+        std::array<uint8_t, 6> textureTag{};
+        bool hasUvTexture{ false };
         float avgDepth{};
         COLORREF color{};
     };
@@ -150,7 +383,10 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
 
         DrawFace df{};
         df.color = face.color;
+        df.textureTag = face.textureTag;
+        df.hasUvTexture = face.hasUvTexture;
         df.pts.reserve(face.worldPoints.size());
+        if (face.hasUvTexture) df.uvs = face.uvs;
 
         float depthSum = 0.0f;
         bool clipped = false;
@@ -175,18 +411,57 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     });
 
     for (const auto& df : drawFaces) {
-        const COLORREF fill = df.color;
-        const COLORREF outline = RGB(GetRValue(df.color) / 2, GetGValue(df.color) / 2, GetBValue(df.color) / 2);
+        const auto* tex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForTag(df.textureTag) : nullptr;
+        if (tex && df.pts.size() >= 3) {
+            for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
+                const POINT p0 = df.pts[0], p1 = df.pts[ti], p2 = df.pts[ti + 1];
+                const POINT t0 = df.uvs[0], t1 = df.uvs[ti], t2 = df.uvs[ti + 1];
 
-        HPEN facePen = CreatePen(PS_SOLID, 1, outline);
-        HBRUSH faceBrush = CreateSolidBrush(fill);
-        HGDIOBJ oldPen = SelectObject(hdc, facePen);
-        HGDIOBJ oldBrush = SelectObject(hdc, faceBrush);
-        Polygon(hdc, df.pts.data(), (int)df.pts.size());
-        SelectObject(hdc, oldPen);
-        SelectObject(hdc, oldBrush);
-        DeleteObject(facePen);
-        DeleteObject(faceBrush);
+                int minx = std::max(0, std::min({ p0.x, p1.x, p2.x }));
+                int maxx = std::min(w - 1, std::max({ p0.x, p1.x, p2.x }));
+                int miny = std::max(0, std::min({ p0.y, p1.y, p2.y }));
+                int maxy = std::min(h - 1, std::max({ p0.y, p1.y, p2.y }));
+
+                float den = float((p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y));
+                if (fabsf(den) < 1e-5f) continue;
+
+                for (int y = miny; y <= maxy; ++y) {
+                    for (int x = minx; x <= maxx; ++x) {
+                        float w0 = float((p1.y - p2.y) * (x - p2.x) + (p2.x - p1.x) * (y - p2.y)) / den;
+                        float w1 = float((p2.y - p0.y) * (x - p2.x) + (p0.x - p2.x) * (y - p2.y)) / den;
+                        float w2 = 1.0f - w0 - w1;
+                        if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
+
+                        float u = w0 * float(t0.x) + w1 * float(t1.x) + w2 * float(t2.x);
+                        float v = w0 * float(t0.y) + w1 * float(t1.y) + w2 * float(t2.y);
+                        SetPixelV(hdc, x, y, SampleTextureColor(*tex, u, v));
+                    }
+                }
+            }
+
+            const COLORREF outline = RGB(GetRValue(df.color) / 3, GetGValue(df.color) / 3, GetBValue(df.color) / 3);
+            HPEN facePen = CreatePen(PS_SOLID, 1, outline);
+            HGDIOBJ oldPen = SelectObject(hdc, facePen);
+            HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+            Polygon(hdc, df.pts.data(), (int)df.pts.size());
+            SelectObject(hdc, oldPen);
+            SelectObject(hdc, oldBrush);
+            DeleteObject(facePen);
+        }
+        else {
+            const COLORREF fill = df.color;
+            const COLORREF outline = RGB(GetRValue(df.color) / 2, GetGValue(df.color) / 2, GetBValue(df.color) / 2);
+
+            HPEN facePen = CreatePen(PS_SOLID, 1, outline);
+            HBRUSH faceBrush = CreateSolidBrush(fill);
+            HGDIOBJ oldPen = SelectObject(hdc, facePen);
+            HGDIOBJ oldBrush = SelectObject(hdc, faceBrush);
+            Polygon(hdc, df.pts.data(), (int)df.pts.size());
+            SelectObject(hdc, oldPen);
+            SelectObject(hdc, oldBrush);
+            DeleteObject(facePen);
+            DeleteObject(faceBrush);
+        }
     }
 
     SelectObject(hdc, penPoint);
@@ -1272,17 +1547,35 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
             std::unordered_map<std::string, battlespire::B3dMesh> meshCache;
 
             auto colorFromTextureTag = [](const std::array<uint8_t, 6>& t) -> COLORREF {
+                if (const auto* tex = TryGetTextureForTag(t)) {
+                    uint32_t h = 2166136261u;
+                    for (uint8_t bt : t) h = (h ^ bt) * 16777619u;
+                    float u = float((h >> 8) % std::max(1, tex->width));
+                    float v = float((h >> 16) % std::max(1, tex->height));
+                    return SampleTextureColor(*tex, u, v);
+                }
+
+                bool allZero = true;
                 uint32_t h = 2166136261u;
-                for (uint8_t b : t) h = (h ^ b) * 16777619u;
-                uint8_t r = uint8_t(64 + (h & 0x7F));
-                uint8_t g = uint8_t(64 + ((h >> 8) & 0x7F));
-                uint8_t b = uint8_t(64 + ((h >> 16) & 0x7F));
+                for (uint8_t bt : t) {
+                    if (bt != 0) allZero = false;
+                    h = (h ^ bt) * 16777619u;
+                }
+                if (allZero) return RGB(100, 100, 100);
+
+                uint8_t r = uint8_t(32 + (h & 0xBF));
+                uint8_t g = uint8_t(32 + ((h >> 8) & 0xBF));
+                uint8_t b = uint8_t(32 + ((h >> 16) & 0xBF));
+                if (r > 150 && b > 150 && g < 120) {
+                    g = uint8_t(std::min(255, (int)g + 90));
+                }
                 return RGB(r, g, b);
             };
 
-            auto applyTransform = [](const battlespire::Int3& v, const battlespire::Bs6ModelInstance& inst) -> battlespire::Int3 {
+            auto applyTransform = [](const battlespire::Int3& v, const battlespire::Bs6ModelInstance& inst, battlespire::Int3& out) -> bool {
                 const float kAngleScale = 6.28318530718f / 2048.0f;
-                float sx = (float)inst.scale / 1024.0f;
+                const float kMaxCoord = 2000000.0f;
+                float sx = std::clamp((float)inst.scale / 1024.0f, -32.0f, 32.0f);
                 float x = (float)v.x * sx;
                 float y = (float)v.y * sx;
                 float z = (float)v.z * sx;
@@ -1302,11 +1595,17 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
                 float x3 = cr * x1 - sr * y2;
                 float y3 = sr * x1 + cr * y2;
 
-                battlespire::Int3 out{};
-                out.x = (int32_t)std::lround(x3 + inst.position.x);
-                out.y = (int32_t)std::lround(y3 + inst.position.y);
-                out.z = (int32_t)std::lround(z2 + inst.position.z);
-                return out;
+                if (!std::isfinite(x3) || !std::isfinite(y3) || !std::isfinite(z2)) return false;
+
+                x3 += inst.position.x;
+                y3 += inst.position.y;
+                z2 += inst.position.z;
+                if (fabsf(x3) > kMaxCoord || fabsf(y3) > kMaxCoord || fabsf(z2) > kMaxCoord) return false;
+
+                out.x = (int32_t)std::lround(x3);
+                out.y = (int32_t)std::lround(y3);
+                out.z = (int32_t)std::lround(z2);
+                return true;
             };
 
             payload->modelInstances = scene->models.size();
@@ -1361,9 +1660,17 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
                 for (const auto& face : mesh.faces) {
                     PreviewFace pf{};
                     pf.color = colorFromTextureTag(face.textureTag);
+                    pf.textureTag = face.textureTag;
+                    pf.hasUvTexture = (face.uvs.size() == face.pointIndices.size() && !face.uvs.empty());
+                    if (pf.hasUvTexture) {
+                        pf.uvs.reserve(face.uvs.size());
+                        for (const auto& uv : face.uvs) pf.uvs.push_back({ (LONG)uv.u, (LONG)uv.v });
+                    }
                     for (uint32_t pi : face.pointIndices) {
                         if (pi >= mesh.points.size()) continue;
-                        pf.worldPoints.push_back(applyTransform(mesh.points[pi], inst));
+                        battlespire::Int3 wp{};
+                        if (!applyTransform(mesh.points[pi], inst, wp)) continue;
+                        pf.worldPoints.push_back(wp);
                     }
                     if (pf.worldPoints.size() >= 3) payload->modelFaces.push_back(std::move(pf));
                 }

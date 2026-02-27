@@ -97,8 +97,14 @@ struct Bs6Scene {
     static bool TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& out, std::wstring* err);
 };
 
+struct B3dFaceUv {
+    uint16_t u{};
+    uint16_t v{};
+};
+
 struct B3dFace {
     std::vector<uint32_t> pointIndices;
+    std::vector<B3dFaceUv> uvs;
     std::array<uint8_t, 6> textureTag{};
 };
 

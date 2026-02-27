@@ -29,6 +29,9 @@ Build a **1:1 in-app Battlespire level viewer** where BS6 levels render with mod
    - Euler conversion and scale semantics need verification against original orientation conventions.
 5. **Visibility/culling parity**
    - Need near/far clipping and ordering behavior that matches game output.
+6. **Preview renderer stability / debug-color limitation**
+   - Current build can present mostly-purple debug faces and occasional geometry-line spikes when transformed vertices project to unstable screen coordinates.
+   - Added guardrails (transform/projection finite/range checks + less purple-biased debug hash colors), but true fix remains Phase 2 texture sampling + Phase 3 material decode.
 
 ## 1:1 Milestone Plan
 
@@ -47,7 +50,7 @@ Build a **1:1 in-app Battlespire level viewer** where BS6 levels render with mod
 
 - [x] Identify Battlespire texture-container candidates (TEXI DIRN + BSI inventory baselined in Phase 2 artifacts).
 - [~] Map 3D face texture tags to concrete texture resources (seed + conservative unique-family auto-bindings generated; broad manual review still pending).
-- [ ] Implement software texture rasterization in viewer (UV interpolation + nearest/bilinear selectable mode).
+- [~] Implement software texture rasterization in viewer (bound-BSI decode path + UV triangle raster (nearest sampling) now active in preview; bilinear and parity validation still pending).
 
 **Exit criteria**: Faces display actual texture content (not hash colors) for >95% of corpus meshes.
 

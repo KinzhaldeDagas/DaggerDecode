@@ -621,6 +621,7 @@ bool B3dMesh::TryParse(const std::vector<uint8_t>& bytes, B3dMesh& out, std::wst
         B3dFace face{};
         face.textureTag = planeData[i].textureTag;
         face.pointIndices.reserve(pointPerPlane);
+        face.uvs.reserve(pointPerPlane);
 
         bool invalidRef = false;
         for (size_t j = 0; j < pointPerPlane; ++j) {
@@ -635,7 +636,10 @@ bool B3dMesh::TryParse(const std::vector<uint8_t>& bytes, B3dMesh& out, std::wst
                 invalidRef = true;
                 break;
             }
+            uint16_t u = static_cast<uint16_t>(pp[4] | (pp[5] << 8));
+            uint16_t v = static_cast<uint16_t>(pp[6] | (pp[7] << 8));
             face.pointIndices.push_back(pointId);
+            face.uvs.push_back({u, v});
         }
 
         if (!invalidRef && face.pointIndices.size() >= 3) {
