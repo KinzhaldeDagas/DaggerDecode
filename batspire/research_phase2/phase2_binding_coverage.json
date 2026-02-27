@@ -1,0 +1,10 @@
+{
+  "bound_face_ratio": 0.0,
+  "bound_faces": 0,
+  "status_counts": {
+    "fallback_unknown": 1,
+    "unbound": 4624
+  },
+  "total_faces": 134754,
+  "total_tags": 4625
+}
