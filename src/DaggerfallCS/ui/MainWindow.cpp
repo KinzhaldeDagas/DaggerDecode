@@ -30,32 +30,49 @@ static std::wstring ToLowerCopy(std::wstring s) {
 
 static constexpr UINT IDM_BSA_DIALOGUE_SPEAK = 42001;
 
-static bool IsAllDigitsWs(const std::wstring& s) {
-    if (s.empty()) return false;
-    for (wchar_t c : s) { if (c < L'0' || c > L'9') return false; }
-    return true;
-}
 
-static std::wstring MakeFlcSpeakFileBase(std::wstring code) {
+struct DialogueCodeParts {
+    std::wstring speaker;
+    int terminalNumber{ -1 };
+};
+
+static bool TryParseDialogueCodeParts(const std::wstring& rawCode, DialogueCodeParts& out) {
+    std::wstring code = rawCode;
     auto issp = [](wchar_t c) { return c == L' ' || c == L'\t' || c == L'\r' || c == L'\n'; };
     while (!code.empty() && issp(code.front())) code.erase(code.begin());
     while (!code.empty() && issp(code.back())) code.pop_back();
-    for (auto& c : code) c = (wchar_t)towlower(c);
-    if (code.size() < 3) return L"";
+    if (code.size() < 4) return false;
+    for (auto& c : code) c = (wchar_t)towupper(c);
 
-    std::wstring prefix = code.substr(0, 2);
-    std::wstring tail = code.substr(2);
-    if (!IsAllDigitsWs(tail)) return L"";
+    if (!(code[0] >= L'A' && code[0] <= L'Z' && code[1] >= L'A' && code[1] <= L'Z')) return false;
 
-    int n = _wtoi(tail.c_str());
-    if (n < 0) return L"";
+    size_t i = code.size();
+    while (i > 0 && code[i - 1] >= L'0' && code[i - 1] <= L'9') --i;
+    if (i >= code.size()) return false;
 
-    for (auto& c : prefix) c = (wchar_t)towupper(c);
-
-    wchar_t num[16]{};
-    swprintf_s(num, L"%02d", n % 100);
-    return prefix + num;
+    std::wstring tail = code.substr(i);
+    out.speaker = code.substr(0, 2);
+    out.terminalNumber = _wtoi(tail.c_str());
+    return true;
 }
+
+static bool TryParseFlcVariant(const std::wstring& name, std::wstring& speaker, std::wstring& mode, int& variant) {
+    size_t slash = name.find_last_of(L"/\\");
+    std::wstring bn = (slash == std::wstring::npos) ? name : name.substr(slash + 1);
+    for (auto& c : bn) c = (wchar_t)towlower(c);
+
+    std::wsmatch m;
+    static const std::wregex re(LR"(^([a-z]{2})(talk|wait)(\d{2})\.flc$)");
+    if (!std::regex_match(bn, m, re)) return false;
+
+    speaker = m[1].str();
+    mode = m[2].str();
+    for (auto& c : speaker) c = (wchar_t)towupper(c);
+    for (auto& c : mode) c = (wchar_t)towupper(c);
+    variant = _wtoi(m[3].str().c_str());
+    return true;
+}
+
 
 
 static std::wstring TopicGroupForLabel(const std::wstring& label) {
@@ -2613,7 +2630,7 @@ void MainWindow::OnBsaDialogueListContextMenu(LPARAM lParam) {
 
 bool MainWindow::BuildFlcSpeakTargetFromListClick(int row, int subItem, FlcSpeakTarget& out) const {
     if (row < 0 || (size_t)row >= m_bsaDialogueRows.size()) return false;
-    if (subItem < 0 || subItem > 2) return false;
+    if (subItem != 1 && subItem != 2) return false; // NPC SAY or Replycode columns
 
     const auto& src = m_bsaDialogueRows[(size_t)row];
 
@@ -2648,20 +2665,9 @@ bool MainWindow::BuildFlcSpeakTargetFromListClick(int row, int subItem, FlcSpeak
 void MainWindow::CmdSpeakBsaDialogueLine(const FlcSpeakTarget& target) {
     if (target.code.empty()) return;
 
-    std::wstring base = MakeFlcSpeakFileBase(target.code);
-    if (base.empty()) {
-        MessageBoxW(m_hwnd, (L"Could not map code to FLC speech file: " + target.code).c_str(), L"Speak", MB_OK | MB_ICONWARNING);
-        return;
-    }
-
-    std::vector<std::wstring> candidateNames;
-    candidateNames.push_back(base + L".VOC");
-    candidateNames.push_back(base + L".WAV");
-
     const battlespire::BsaArchive* flcBsa = nullptr;
     for (const auto& a : m_bsaArchives) {
-        std::wstring n = ToLowerWs(a.sourcePath.filename().wstring());
-        if (n == L"flc.bsa") {
+        if (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"FLC.BSA") == 0) {
             flcBsa = &a;
             break;
         }
@@ -2672,47 +2678,79 @@ void MainWindow::CmdSpeakBsaDialogueLine(const FlcSpeakTarget& target) {
         return;
     }
 
-    const battlespire::BsaEntry* found = nullptr;
-    for (const auto& cand : candidateNames) {
-        found = flcBsa->FindEntryCaseInsensitive(winutil::NarrowUtf8(cand));
-        if (found) break;
+    DialogueCodeParts parts{};
+    if (!TryParseDialogueCodeParts(target.code, parts)) {
+        MessageBoxW(m_hwnd, (L"Could not parse dialogue code: " + target.code).c_str(), L"Speak", MB_OK | MB_ICONWARNING);
+        return;
     }
 
-    if (!found) {
-        std::wstring msg = L"No matching audio entry was found in FLC.BSA for code ";
-        msg += target.code;
-        msg += L".\r\nExpected stems: ";
-        msg += base;
-        msg += L"(.VOC/.WAV)";
+    const std::wstring mode = target.replySide ? L"WAIT" : L"TALK";
+
+    struct Candidate { const battlespire::BsaEntry* e{}; int variant{}; std::wstring name; };
+    std::vector<Candidate> cands;
+    for (const auto& e : flcBsa->entries) {
+        std::wstring spk, emode;
+        int v = -1;
+        if (!TryParseFlcVariant(winutil::WidenUtf8(e.name), spk, emode, v)) continue;
+        if (spk != parts.speaker) continue;
+        if (emode != mode) continue;
+        cands.push_back(Candidate{ &e, v, winutil::WidenUtf8(e.name) });
+    }
+
+    if (cands.empty()) {
+        std::wstring msg = L"No matching " + mode + L" animation clips found in FLC.BSA for speaker code " + parts.speaker + L".";
         MessageBoxW(m_hwnd, msg.c_str(), L"Speak", MB_OK | MB_ICONWARNING);
         return;
     }
 
+    std::stable_sort(cands.begin(), cands.end(), [](const Candidate& a, const Candidate& b) {
+        if (a.variant != b.variant) return a.variant < b.variant;
+        return _wcsicmp(a.name.c_str(), b.name.c_str()) < 0;
+    });
+
+    int wanted = parts.terminalNumber % 100;
+    const Candidate* picked = nullptr;
+    for (const auto& c : cands) {
+        if (c.variant == wanted) { picked = &c; break; }
+    }
+    if (!picked) {
+        picked = &cands[(size_t)(parts.terminalNumber >= 0 ? (parts.terminalNumber % (int)cands.size()) : 0)];
+    }
+
     std::vector<uint8_t> bytes;
     std::wstring err;
-    if (!flcBsa->ReadEntryData(*found, bytes, &err)) {
-        MessageBoxW(m_hwnd, (L"Failed to read audio entry: " + err).c_str(), L"Speak", MB_OK | MB_ICONERROR);
+    if (!flcBsa->ReadEntryData(*picked->e, bytes, &err)) {
+        MessageBoxW(m_hwnd, (L"Failed to read FLC clip: " + err).c_str(), L"Speak", MB_OK | MB_ICONERROR);
         return;
     }
+
+    bool stripped = false;
+    battlespire::FlcFile::NormalizeLeadingPrefix(bytes, stripped);
 
     auto tempDir = std::filesystem::temp_directory_path();
-    std::filesystem::path out = tempDir / (L"DaggerfallCS_" + base + L".wav");
+    std::filesystem::path out = tempDir / (L"DaggerfallCS_" + parts.speaker + L"_" + mode + L"_" + std::to_wstring(picked->variant) + L".flc");
+
     std::ofstream f(out, std::ios::binary);
     if (!f) {
-        MessageBoxW(m_hwnd, L"Failed to write temporary wave file.", L"Speak", MB_OK | MB_ICONERROR);
+        MessageBoxW(m_hwnd, L"Failed to write temporary FLC file.", L"Speak", MB_OK | MB_ICONERROR);
         return;
     }
-    f.write(reinterpret_cast<const char*>(bytes.data()), (std::streamsize)bytes.size());
+    if (!bytes.empty()) f.write(reinterpret_cast<const char*>(bytes.data()), (std::streamsize)bytes.size());
     f.close();
 
-    if (!PlaySoundW(out.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT)) {
-        MessageBoxW(m_hwnd, L"Unable to play audio (PlaySound failed).", L"Speak", MB_OK | MB_ICONWARNING);
+    HINSTANCE h = ShellExecuteW(m_hwnd, L"open", out.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if ((INT_PTR)h <= 32) {
+        std::wstring msg = L"Could not open FLC clip in the default viewer. File saved to:\r\n" + out.wstring();
+        MessageBoxW(m_hwnd, msg.c_str(), L"Speak", MB_OK | MB_ICONWARNING);
         return;
     }
 
-    std::wstring who = target.replySide ? L"Reply" : L"Say";
-    SetStatus(L"Speak " + who + L": " + target.code + L" -> " + winutil::WidenUtf8(found->name));
+    std::wstring where = target.replySide ? L"Reply" : L"NPC SAY";
+    std::wstring st = L"Speak " + where + L": " + target.code + L" -> " + picked->name;
+    if (stripped) st += L" (normalized)";
+    SetStatus(st);
 }
+
 
 void MainWindow::ShowBsaDialogueRowPreview(int row) {
     if (row < 0 || (size_t)row >= m_bsaDialogueRows.size()) return;
