@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "BattlespireFormats.h"
+#include <functional>
 
 namespace battlespire {
 
@@ -318,6 +319,338 @@ bool FlcFile::LoadFromFile(const std::filesystem::path& filePath, FlcFile& out, 
     }
 
     out.hadLeadingUnknownPrefix = stripped;
+    return true;
+}
+
+bool Bs6FileSummary::TrySummarize(const std::vector<uint8_t>& bytes, Bs6FileSummary& out, std::wstring* err) {
+    out = {};
+
+    if (bytes.size() < 8) {
+        if (err) *err = L"BS6 payload is too small.";
+        return false;
+    }
+
+    size_t p = 0;
+    while (p + 8 <= bytes.size()) {
+        const uint8_t* h = bytes.data() + p;
+        char tag[5]{};
+        memcpy(tag, h, 4);
+        uint32_t len = ReadU32(h + 4);
+
+        if (len > bytes.size() - (p + 8)) {
+            if (err) *err = L"BS6 chunk length points outside payload bounds.";
+            return false;
+        }
+
+        Bs6ChunkInfo c{};
+        c.name.assign(tag, tag + 4);
+        c.length = len;
+        out.chunks.push_back(std::move(c));
+
+        p += 8 + size_t(len);
+    }
+
+    if (p != bytes.size()) {
+        if (err) *err = L"BS6 payload has trailing bytes after final chunk.";
+        return false;
+    }
+
+    out.valid = !out.chunks.empty();
+    if (!out.valid) {
+        if (err) *err = L"BS6 payload did not contain any chunks.";
+        return false;
+    }
+
+    return true;
+}
+
+
+bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& out, std::wstring* err) {
+    out = {};
+
+    auto readI32 = [](const uint8_t* p) -> int32_t {
+        return static_cast<int32_t>(ReadU32(p));
+    };
+
+    auto normalizeModelName = [](std::string s) -> std::string {
+        for (auto& c : s) if (c == '\\') c = '/';
+        size_t slash = s.find_last_of('/');
+        if (slash != std::string::npos) s = s.substr(slash + 1);
+
+        auto isTrim = [](char ch) {
+            return ch == '\0' || ch == ' ' || ch == '\r' || ch == '\n' || ch == '\t';
+        };
+        while (!s.empty() && isTrim(s.back())) s.pop_back();
+        while (!s.empty() && isTrim(s.front())) s.erase(s.begin());
+
+        for (auto& c : s) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+        if (!s.empty() && s.find('.') == std::string::npos) s += ".3d";
+        return s;
+    };
+
+    struct ObjTemplateList {
+        std::vector<std::string> modelNames;
+    };
+
+    auto parseLfil = [&](const uint8_t* payload, uint32_t len, ObjTemplateList& outList) {
+        if (len < 260) return;
+        size_t count = len / 260;
+        outList.modelNames.reserve(outList.modelNames.size() + count);
+        for (size_t i = 0; i < count; ++i) {
+            const char* src = reinterpret_cast<const char*>(payload + i * 260);
+            size_t n = 0;
+            while (n < 260 && src[n] != '\0') ++n;
+            if (n == 0) continue;
+            outList.modelNames.push_back(normalizeModelName(std::string(src, src + n)));
+        }
+    };
+
+    auto parseObjd = [&](const uint8_t* payload, uint32_t len, const ObjTemplateList& templates) {
+        Bs6ModelInstance inst{};
+        bool hasIdfi = false;
+
+        size_t p = 0;
+        while (p + 8 <= len) {
+            const uint8_t* h = payload + p;
+            std::string name(reinterpret_cast<const char*>(h), reinterpret_cast<const char*>(h) + 4);
+            uint32_t clen = ReadU32(h + 4);
+            size_t next = p + 8 + size_t(clen);
+            if (next > len) break;
+            const uint8_t* c = payload + p + 8;
+
+            if (name == "IDFI" && clen >= 4) {
+                uint32_t id = ReadU32(c);
+                if (id < templates.modelNames.size()) {
+                    inst.modelName = normalizeModelName(templates.modelNames[id]);
+                    hasIdfi = !inst.modelName.empty();
+                }
+            }
+            else if (name == "POSI" && clen >= 12) {
+                inst.position = { readI32(c + 0), readI32(c + 4), readI32(c + 8) };
+            }
+            else if (name == "ANGS" && clen >= 12) {
+                inst.angles = { readI32(c + 0), readI32(c + 4), readI32(c + 8) };
+            }
+            else if (name == "SCAL" && clen >= 4) {
+                inst.scale = readI32(c);
+                if (inst.scale == 0) inst.scale = 1024;
+            }
+
+            p = next;
+        }
+
+        if (hasIdfi && !inst.modelName.empty()) {
+            out.models.push_back(std::move(inst));
+        }
+    };
+
+    if (bytes.size() < 8) {
+        if (err) *err = L"BS6 scene payload is too small.";
+        return false;
+    }
+
+    std::unordered_set<std::string> groupNames = {
+        "GNRL", "TEXI", "STRU", "SNAP", "VIEW", "CTRL", "LINK", "OBJS", "OBJD", "LITS", "LITD", "FLAS", "FLAD"
+    };
+
+    std::function<bool(size_t, size_t, ObjTemplateList*)> walk = [&](size_t start, size_t end, ObjTemplateList* inheritedTemplates) -> bool {
+        size_t p = start;
+        ObjTemplateList localTemplates;
+        ObjTemplateList* activeTemplates = inheritedTemplates;
+
+        while (p + 8 <= end) {
+            const uint8_t* h = bytes.data() + p;
+            std::string name(reinterpret_cast<const char*>(h), reinterpret_cast<const char*>(h) + 4);
+            uint32_t len = ReadU32(h + 4);
+            size_t next = p + 8 + size_t(len);
+            if (next > end) {
+                if (err) *err = L"BS6 scene parse exceeded payload bounds.";
+                return false;
+            }
+
+            const uint8_t* payload = bytes.data() + p + 8;
+            if (name == "POSI" && len >= 12) {
+                Int3 m{ readI32(payload + 0), readI32(payload + 4), readI32(payload + 8) };
+                out.markers.push_back(m);
+            }
+            else if (name == "BBOX" && len >= 24) {
+                Bs6SceneBox b{};
+                if (len >= 72) {
+                    for (size_t i = 0; i < 6; ++i) {
+                        b.corners[i].x = readI32(payload + i * 12 + 0);
+                        b.corners[i].y = readI32(payload + i * 12 + 4);
+                        b.corners[i].z = readI32(payload + i * 12 + 8);
+                    }
+                } else {
+                    Int3 a{ readI32(payload + 0), readI32(payload + 4), readI32(payload + 8) };
+                    Int3 c{ readI32(payload + 12), readI32(payload + 16), readI32(payload + 20) };
+                    b.corners[0] = a;
+                    b.corners[1] = { c.x, a.y, a.z };
+                    b.corners[2] = { a.x, c.y, a.z };
+                    b.corners[3] = { a.x, a.y, c.z };
+                    b.corners[4] = c;
+                    b.corners[5] = { a.x, c.y, c.z };
+                }
+                out.boxes.push_back(b);
+            }
+            else if (name == "LFIL") {
+                parseLfil(payload, len, localTemplates);
+                activeTemplates = &localTemplates;
+            }
+            else if (name == "OBJD" && activeTemplates) {
+                parseObjd(payload, len, *activeTemplates);
+            }
+
+            if (groupNames.find(name) != groupNames.end()) {
+                ObjTemplateList* childTemplates = activeTemplates;
+                if (name == "OBJS") {
+                    childTemplates = &localTemplates;
+                }
+                if (!walk(p + 8, next, childTemplates)) return false;
+            }
+
+            p = next;
+        }
+
+        if (p != end) {
+            if (err) *err = L"BS6 scene parse encountered trailing bytes.";
+            return false;
+        }
+
+        return true;
+    };
+
+    if (!walk(0, bytes.size(), nullptr)) return false;
+
+    if (out.markers.empty() && out.boxes.empty() && out.models.empty()) {
+        if (err) *err = L"BS6 scene contains no parseable markers, boxes, or models.";
+        return false;
+    }
+
+    return true;
+}
+
+bool B3dMesh::TryParse(const std::vector<uint8_t>& bytes, B3dMesh& out, std::wstring* err) {
+    out = {};
+
+    if (bytes.size() < 64) {
+        if (err) *err = L"3D payload is too small for mesh header.";
+        return false;
+    }
+
+    uint32_t pointCount = ReadU32(bytes.data() + 4);
+    uint32_t planeCount = ReadU32(bytes.data() + 8);
+    uint32_t planeDataOffset = ReadU32(bytes.data() + 24);
+    uint32_t pointListOffset = ReadU32(bytes.data() + 48);
+    uint32_t planeListOffset = ReadU32(bytes.data() + 60);
+
+    memcpy(out.version, bytes.data(), 4);
+    out.version[4] = '\0';
+
+    auto inBounds = [&](uint32_t off, size_t bytesNeeded) -> bool {
+        return off <= bytes.size() && bytesNeeded <= bytes.size() - off;
+    };
+    if (!inBounds(pointListOffset, size_t(pointCount) * 12u) || !inBounds(planeDataOffset, size_t(planeCount) * 24u) || !inBounds(planeListOffset, 0)) {
+        if (err) *err = L"3D mesh offsets are outside payload bounds.";
+        return false;
+    }
+
+    out.points.reserve(pointCount);
+    for (uint32_t i = 0; i < pointCount; ++i) {
+        const uint8_t* p = bytes.data() + pointListOffset + size_t(i) * 12u;
+        out.points.push_back({ static_cast<int32_t>(ReadU32(p + 0)), static_cast<int32_t>(ReadU32(p + 4)), static_cast<int32_t>(ReadU32(p + 8)) });
+    }
+
+    struct PlaneDataRef { std::array<uint8_t,6> textureTag{}; };
+    std::vector<PlaneDataRef> planeData;
+    planeData.reserve(planeCount);
+    for (uint32_t i = 0; i < planeCount; ++i) {
+        const uint8_t* p = bytes.data() + planeDataOffset + size_t(i) * 24u;
+        PlaneDataRef ref{};
+        memcpy(ref.textureTag.data(), p + 4, 6);
+        planeData.push_back(ref);
+    }
+
+    size_t planeCursor = planeListOffset;
+    out.faces.reserve(planeCount);
+    for (uint32_t i = 0; i < planeCount; ++i) {
+        if (planeCursor + 10 > bytes.size()) {
+            if (err) *err = L"3D plane list truncated in header section.";
+            return false;
+        }
+
+        uint8_t pointPerPlane = bytes[planeCursor + 0];
+        size_t pointsBytes = size_t(pointPerPlane) * 8u;
+        size_t next = planeCursor + 10 + pointsBytes;
+        if (next > bytes.size()) {
+            if (err) *err = L"3D plane list truncated in point section.";
+            return false;
+        }
+
+        B3dFace face{};
+        face.textureTag = planeData[i].textureTag;
+        face.pointIndices.reserve(pointPerPlane);
+        for (size_t j = 0; j < pointPerPlane; ++j) {
+            const uint8_t* pp = bytes.data() + planeCursor + 10 + j * 8u;
+            uint32_t pointByteOffset = ReadU32(pp);
+            uint32_t pointId = pointByteOffset / 12u;
+            if (pointId < out.points.size()) face.pointIndices.push_back(pointId);
+        }
+
+        if (face.pointIndices.size() >= 3) out.faces.push_back(std::move(face));
+        planeCursor = next;
+    }
+
+    return !out.points.empty() && !out.faces.empty();
+}
+
+bool B3dFileSummary::TryParse(const std::vector<uint8_t>& bytes, B3dFileSummary& out, std::wstring* err) {
+    out = {};
+
+    // tools/3dtool uses a 64-byte header: <4s15I.
+    if (bytes.size() < 64) {
+        if (err) *err = L"3D payload is too small for header.";
+        return false;
+    }
+
+    memcpy(out.version, bytes.data(), 4);
+    out.version[4] = '\0';
+
+    out.pointCount = ReadU32(bytes.data() + 4);
+    out.planeCount = ReadU32(bytes.data() + 8);
+    out.radius = ReadU32(bytes.data() + 12);
+    out.planeDataOffset = ReadU32(bytes.data() + 24);
+    out.objectCount = ReadU32(bytes.data() + 32);
+    out.pointListOffset = ReadU32(bytes.data() + 48);
+    out.normalListOffset = ReadU32(bytes.data() + 52);
+    out.planeListOffset = ReadU32(bytes.data() + 60);
+
+    auto inBounds = [&](uint32_t off, size_t bytesNeeded) -> bool {
+        return off <= bytes.size() && bytesNeeded <= bytes.size() - off;
+    };
+
+    if (!inBounds(out.pointListOffset, size_t(out.pointCount) * 12u)) {
+        if (err) *err = L"3D point list extends outside payload bounds.";
+        return false;
+    }
+
+    // normals are 24 bytes per plane in tool reference.
+    if (!inBounds(out.normalListOffset, size_t(out.planeCount) * 24u)) {
+        if (err) *err = L"3D normal list extends outside payload bounds.";
+        return false;
+    }
+
+    if (!inBounds(out.planeDataOffset, size_t(out.planeCount) * 24u)) {
+        if (err) *err = L"3D plane data list extends outside payload bounds.";
+        return false;
+    }
+
+    if (!inBounds(out.planeListOffset, 0)) {
+        if (err) *err = L"3D plane list offset is outside payload bounds.";
+        return false;
+    }
+
+    out.valid = true;
     return true;
 }
 
