@@ -58,4 +58,77 @@ struct FlcFile {
     static bool NormalizeLeadingPrefix(std::vector<uint8_t>& bytes, bool& strippedPrefix);
 };
 
+struct Bs6ChunkInfo {
+    std::string name;
+    uint32_t length{};
+};
+
+struct Bs6FileSummary {
+    bool valid{ false };
+    std::vector<Bs6ChunkInfo> chunks;
+
+    static bool TrySummarize(const std::vector<uint8_t>& bytes, Bs6FileSummary& out, std::wstring* err);
+};
+
+
+struct Int3 {
+    int32_t x{};
+    int32_t y{};
+    int32_t z{};
+};
+
+struct Bs6SceneBox {
+    std::array<Int3, 6> corners{};
+};
+
+struct Bs6ModelInstance {
+    std::string modelName;
+    Int3 position{};
+    Int3 angles{};
+    int32_t scale{ 1024 };
+};
+
+struct Bs6Scene {
+    std::vector<Int3> markers;
+    std::vector<Bs6SceneBox> boxes;
+    std::vector<Bs6ModelInstance> models;
+    std::vector<std::string> unresolvedModelNames;
+
+    static bool TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& out, std::wstring* err);
+};
+
+struct B3dFaceUv {
+    uint16_t u{};
+    uint16_t v{};
+};
+
+struct B3dFace {
+    std::vector<uint32_t> pointIndices;
+    std::vector<B3dFaceUv> uvs;
+    std::array<uint8_t, 6> textureTag{};
+};
+
+struct B3dMesh {
+    char version[5]{};
+    std::vector<Int3> points;
+    std::vector<B3dFace> faces;
+
+    static bool TryParse(const std::vector<uint8_t>& bytes, B3dMesh& out, std::wstring* err);
+};
+
+struct B3dFileSummary {
+    bool valid{ false };
+    char version[5]{};
+    uint32_t pointCount{};
+    uint32_t planeCount{};
+    uint32_t radius{};
+    uint32_t objectCount{};
+    uint32_t pointListOffset{};
+    uint32_t normalListOffset{};
+    uint32_t planeDataOffset{};
+    uint32_t planeListOffset{};
+
+    static bool TryParse(const std::vector<uint8_t>& bytes, B3dFileSummary& out, std::wstring* err);
+};
+
 } // namespace battlespire
