@@ -5,6 +5,7 @@
 #include "../export/CsvWriter.h"
 #include "../arena2/QuestOpcodeDisasm.h"
 #include "../battlespire/BattlespireFormats.h"
+#include <cmath>
 
 namespace ui {
 
@@ -28,6 +29,278 @@ static std::wstring ToLowerCopy(std::wstring s) {
 
 static constexpr UINT IDM_BSA_DIALOGUE_SPEAK = 42001;
 static constexpr UINT IDM_BSA_ENTRY_SPEAK = 42002;
+
+static constexpr UINT WM_LVL_SET_SCENE = WM_APP + 120;
+
+struct PreviewFace {
+    std::vector<battlespire::Int3> worldPoints;
+    COLORREF color{ RGB(180, 180, 180) };
+};
+
+struct LevelPreviewScene {
+    std::vector<battlespire::Int3> markers;
+    std::vector<battlespire::Bs6SceneBox> boxes;
+    std::vector<PreviewFace> modelFaces;
+    size_t modelInstances{};
+    size_t resolvedInstances{};
+    size_t missingInstances{};
+    std::wstring label;
+};
+
+struct LevelPreviewState {
+    HWND hwnd{};
+    std::unique_ptr<LevelPreviewScene> scene;
+    std::wstring status = L"Awaiting.....";
+    float camX = 0.0f;
+    float camY = 1600.0f;
+    float camZ = -3000.0f;
+    float yaw = 0.0f;
+    float pitch = 0.1f;
+    bool dragging = false;
+    POINT lastMouse{};
+    std::array<bool, 256> keys{};
+};
+
+static void DrawTextBottomRight(HDC hdc, RECT rc, const std::wstring& text, COLORREF color) {
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, color);
+    RECT tr = rc;
+    tr.right -= 10;
+    tr.bottom -= 10;
+    DrawTextW(hdc, text.c_str(), -1, &tr, DT_RIGHT | DT_BOTTOM | DT_SINGLELINE);
+}
+
+static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, float y, float z, POINT& out) {
+    float dx = x - s.camX;
+    float dy = y - s.camY;
+    float dz = z - s.camZ;
+
+    float cy = cosf(s.yaw), sy = sinf(s.yaw);
+    float cp = cosf(s.pitch), sp = sinf(s.pitch);
+
+    float x1 = cy * dx - sy * dz;
+    float z1 = sy * dx + cy * dz;
+    float y1 = cp * dy - sp * z1;
+    float z2 = sp * dy + cp * z1;
+
+    if (z2 < 1.0f) return false;
+    float focal = (float)std::min(w, h) * 0.7f;
+    out.x = int(w * 0.5f + (x1 / z2) * focal);
+    out.y = int(h * 0.5f - (y1 / z2) * focal);
+    return true;
+}
+
+static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
+    HBRUSH bg = CreateSolidBrush(RGB(0, 0, 0));
+    FillRect(hdc, &rc, bg);
+    DeleteObject(bg);
+
+    if (!s.scene) {
+        DrawTextBottomRight(hdc, rc, s.status, RGB(180, 180, 180));
+        return;
+    }
+
+    int w = rc.right - rc.left;
+    int h = rc.bottom - rc.top;
+
+    HPEN penBox = CreatePen(PS_SOLID, 1, RGB(60, 180, 255));
+    HPEN penPoint = CreatePen(PS_SOLID, 1, RGB(220, 220, 90));
+
+    auto drawLine3 = [&](const battlespire::Int3& a, const battlespire::Int3& b) {
+        POINT pa{}, pb{};
+        if (!ProjectPoint(s, w, h, (float)a.x, (float)a.y, (float)a.z, pa)) return;
+        if (!ProjectPoint(s, w, h, (float)b.x, (float)b.y, (float)b.z, pb)) return;
+        MoveToEx(hdc, pa.x, pa.y, nullptr);
+        LineTo(hdc, pb.x, pb.y);
+    };
+
+    SelectObject(hdc, penBox);
+    for (const auto& box : s.scene->boxes) {
+        const auto& c = box.corners;
+        drawLine3(c[0], c[1]); drawLine3(c[0], c[2]); drawLine3(c[0], c[3]);
+        drawLine3(c[4], c[1]); drawLine3(c[4], c[2]); drawLine3(c[4], c[3]);
+        drawLine3(c[5], c[1]); drawLine3(c[5], c[2]); drawLine3(c[5], c[3]);
+    }
+
+    struct DrawFace {
+        std::vector<POINT> pts;
+        float avgDepth{};
+        COLORREF color{};
+    };
+    std::vector<DrawFace> drawFaces;
+    drawFaces.reserve(s.scene->modelFaces.size());
+
+    auto depthFor = [&](float x, float y, float z, float& outDepth) -> bool {
+        float dx = x - s.camX;
+        float dy = y - s.camY;
+        float dz = z - s.camZ;
+        float cy = cosf(s.yaw), sy = sinf(s.yaw);
+        float cp = cosf(s.pitch), sp = sinf(s.pitch);
+        float x1 = cy * dx - sy * dz;
+        float z1 = sy * dx + cy * dz;
+        float y1 = cp * dy - sp * z1;
+        float z2 = sp * dy + cp * z1;
+        (void)x1; (void)y1;
+        outDepth = z2;
+        return z2 >= 1.0f;
+    };
+
+    for (const auto& face : s.scene->modelFaces) {
+        if (face.worldPoints.size() < 3) continue;
+
+        DrawFace df{};
+        df.color = face.color;
+        df.pts.reserve(face.worldPoints.size());
+
+        float depthSum = 0.0f;
+        bool clipped = false;
+        for (const auto& wp : face.worldPoints) {
+            POINT p{};
+            float d = 0.0f;
+            if (!ProjectPoint(s, w, h, (float)wp.x, (float)wp.y, (float)wp.z, p) || !depthFor((float)wp.x, (float)wp.y, (float)wp.z, d)) {
+                clipped = true;
+                break;
+            }
+            depthSum += d;
+            df.pts.push_back(p);
+        }
+
+        if (clipped || df.pts.size() < 3) continue;
+        df.avgDepth = depthSum / (float)df.pts.size();
+        drawFaces.push_back(std::move(df));
+    }
+
+    std::stable_sort(drawFaces.begin(), drawFaces.end(), [](const DrawFace& a, const DrawFace& b) {
+        return a.avgDepth > b.avgDepth;
+    });
+
+    for (const auto& df : drawFaces) {
+        const COLORREF fill = df.color;
+        const COLORREF outline = RGB(GetRValue(df.color) / 2, GetGValue(df.color) / 2, GetBValue(df.color) / 2);
+
+        HPEN facePen = CreatePen(PS_SOLID, 1, outline);
+        HBRUSH faceBrush = CreateSolidBrush(fill);
+        HGDIOBJ oldPen = SelectObject(hdc, facePen);
+        HGDIOBJ oldBrush = SelectObject(hdc, faceBrush);
+        Polygon(hdc, df.pts.data(), (int)df.pts.size());
+        SelectObject(hdc, oldPen);
+        SelectObject(hdc, oldBrush);
+        DeleteObject(facePen);
+        DeleteObject(faceBrush);
+    }
+
+    SelectObject(hdc, penPoint);
+    for (const auto& m : s.scene->markers) {
+        POINT p{};
+        if (!ProjectPoint(s, w, h, (float)m.x, (float)m.y, (float)m.z, p)) continue;
+        Rectangle(hdc, p.x - 2, p.y - 2, p.x + 2, p.y + 2);
+    }
+
+    DeleteObject(penBox);
+    DeleteObject(penPoint);
+
+    std::wstring msg = s.scene->label + L"  models " + std::to_wstring(s.scene->resolvedInstances) + L"/" + std::to_wstring(s.scene->modelInstances) + L"  (WASD move, click+drag rotate)";
+    DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
+}
+
+static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    auto* s = reinterpret_cast<LevelPreviewState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    switch (msg) {
+    case WM_CREATE: {
+        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        s = reinterpret_cast<LevelPreviewState*>(cs->lpCreateParams);
+        s->hwnd = hwnd;
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)s);
+        SetTimer(hwnd, 1, 16, nullptr);
+        return 0;
+    }
+    case WM_DESTROY:
+        KillTimer(hwnd, 1);
+        return 0;
+    case WM_NCDESTROY:
+        if (s) {
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+            delete s;
+        }
+        return 0;
+    case WM_LVL_SET_SCENE:
+        if (s) {
+            std::unique_ptr<LevelPreviewScene> scene(reinterpret_cast<LevelPreviewScene*>(wParam));
+            if (!scene || (scene->markers.empty() && scene->boxes.empty() && scene->modelFaces.empty())) {
+                s->scene.reset();
+                s->status = scene && !scene->label.empty() ? scene->label : L"Awaiting.....";
+            }
+            else {
+                s->status = L"Loaded";
+                s->scene = std::move(scene);
+            }
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+    case WM_KEYDOWN:
+        if (s && wParam < s->keys.size()) s->keys[wParam] = true;
+        return 0;
+    case WM_KEYUP:
+        if (s && wParam < s->keys.size()) s->keys[wParam] = false;
+        return 0;
+    case WM_LBUTTONDOWN:
+        if (s) {
+            SetFocus(hwnd);
+            SetCapture(hwnd);
+            s->dragging = true;
+            s->lastMouse.x = GET_X_LPARAM(lParam);
+            s->lastMouse.y = GET_Y_LPARAM(lParam);
+        }
+        return 0;
+    case WM_LBUTTONUP:
+        if (s) {
+            s->dragging = false;
+            ReleaseCapture();
+        }
+        return 0;
+    case WM_MOUSEMOVE:
+        if (s && s->dragging) {
+            POINT p{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            int dx = p.x - s->lastMouse.x;
+            int dy = p.y - s->lastMouse.y;
+            s->lastMouse = p;
+            s->yaw += dx * 0.005f;
+            s->pitch -= dy * 0.005f;
+            if (s->pitch > 1.5f) s->pitch = 1.5f;
+            if (s->pitch < -1.5f) s->pitch = -1.5f;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+    case WM_TIMER:
+        if (s) {
+            float speed = 50.0f;
+            float fy = cosf(s->yaw), fx = sinf(s->yaw);
+            if (s->keys['W']) { s->camX += fx * speed; s->camZ += fy * speed; }
+            if (s->keys['S']) { s->camX -= fx * speed; s->camZ -= fy * speed; }
+            if (s->keys['A']) { s->camX -= fy * speed; s->camZ += fx * speed; }
+            if (s->keys['D']) { s->camX += fy * speed; s->camZ -= fx * speed; }
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT:
+        if (s) {
+            PAINTSTRUCT ps{};
+            HDC hdc = BeginPaint(hwnd, &ps);
+            RECT rc{};
+            GetClientRect(hwnd, &rc);
+            DrawLevelScene(*s, hdc, rc);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        break;
+    default:
+        break;
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
 
 
 struct DialogueCodeParts {
@@ -189,6 +462,39 @@ static bool IsLikelyUtf8Printable(const std::vector<uint8_t>& bytes) {
         else printable++;
     }
     return control * 8 < sample;
+}
+
+
+static std::wstring BuildBs6SummaryPreview(const battlespire::Bs6FileSummary& s) {
+    std::wstring out = L"BS6 level summary\r\n";
+    out += L"Chunks: " + std::to_wstring(s.chunks.size()) + L"\r\n\r\n";
+    const size_t show = std::min<size_t>(s.chunks.size(), 128);
+    for (size_t i = 0; i < show; ++i) {
+        wchar_t line[256]{};
+        std::wstring name = winutil::WidenUtf8(s.chunks[i].name);
+        swprintf_s(line, L"%03zu  %s  len=%u\r\n", i, name.c_str(), (unsigned)s.chunks[i].length);
+        out += line;
+    }
+    if (s.chunks.size() > show) out += L"...\r\n";
+    return out;
+}
+
+static std::wstring BuildB3dSummaryPreview(const battlespire::B3dFileSummary& s) {
+    std::wstring out = L"3D model summary\r\n";
+    out += L"Version: ";
+    out += winutil::WidenUtf8(s.version);
+    out += L"\r\n";
+    out += L"Points: " + std::to_wstring(s.pointCount) + L"\r\n";
+    out += L"Planes: " + std::to_wstring(s.planeCount) + L"\r\n";
+    out += L"Objects: " + std::to_wstring(s.objectCount) + L"\r\n";
+    out += L"Radius: " + std::to_wstring(s.radius) + L"\r\n\r\n";
+
+    wchar_t line[128]{};
+    swprintf_s(line, L"pointListOffset: 0x%X\r\n", (unsigned)s.pointListOffset); out += line;
+    swprintf_s(line, L"normalListOffset: 0x%X\r\n", (unsigned)s.normalListOffset); out += line;
+    swprintf_s(line, L"planeDataOffset: 0x%X\r\n", (unsigned)s.planeDataOffset); out += line;
+    swprintf_s(line, L"planeListOffset: 0x%X\r\n", (unsigned)s.planeListOffset); out += line;
+    return out;
 }
 
 static std::wstring HexDumpPreview(const std::vector<uint8_t>& bytes, size_t maxBytes = 256) {
@@ -835,6 +1141,20 @@ bool MainWindow::OnCreate() {
     m_status = CreateWindowExW(0, STATUSCLASSNAMEW, nullptr,
         WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, m_hwnd, (HMENU)(INT_PTR)IDC_STATUS_BAR, GetModuleHandleW(nullptr), nullptr);
 
+    WNDCLASSW wc{};
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = L"DaggerfallCS_LevelPreview";
+    wc.lpfnWndProc = LevelPreviewWndProc;
+    wc.hCursor = LoadCursorW(nullptr, IDC_CROSS);
+    wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    RegisterClassW(&wc);
+
+    auto* previewState = new LevelPreviewState();
+    m_levelPreview = CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"Level Preview",
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        CW_USEDEFAULT, CW_USEDEFAULT, 960, 640,
+        m_hwnd, nullptr, GetModuleHandleW(nullptr), previewState);
+
     m_splitLR.Attach(m_hwnd, m_tree, m_list);
     m_splitLR.SetRatio(0.28);
 
@@ -857,6 +1177,10 @@ bool MainWindow::OnCreate() {
 void MainWindow::OnDestroy() {
     EndListPreviewEdit(true);
     SaveIndicesOverrides();
+    if (m_levelPreview && IsWindow(m_levelPreview)) {
+        DestroyWindow(m_levelPreview);
+        m_levelPreview = nullptr;
+    }
     PostQuitMessage(0);
 }
 
@@ -925,6 +1249,134 @@ void MainWindow::OnCommand(WORD id) {
 
 void MainWindow::SetStatus(const std::wstring& s) {
     winutil::SetStatusText(m_status, s);
+}
+
+
+void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const std::wstring& label) {
+    if (!m_levelPreview || !IsWindow(m_levelPreview)) return;
+
+    auto payload = std::make_unique<LevelPreviewScene>();
+    payload->label = label;
+    if (scene) {
+        payload->markers = scene->markers;
+        payload->boxes = scene->boxes;
+
+        auto* modelsArchive = [&]() -> const battlespire::BsaArchive* {
+            for (const auto& a : m_bsaArchives) {
+                if (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"3D.BSA") == 0) return &a;
+            }
+            return nullptr;
+        }();
+
+        if (modelsArchive) {
+            std::unordered_map<std::string, battlespire::B3dMesh> meshCache;
+
+            auto colorFromTextureTag = [](const std::array<uint8_t, 6>& t) -> COLORREF {
+                uint32_t h = 2166136261u;
+                for (uint8_t b : t) h = (h ^ b) * 16777619u;
+                uint8_t r = uint8_t(64 + (h & 0x7F));
+                uint8_t g = uint8_t(64 + ((h >> 8) & 0x7F));
+                uint8_t b = uint8_t(64 + ((h >> 16) & 0x7F));
+                return RGB(r, g, b);
+            };
+
+            auto applyTransform = [](const battlespire::Int3& v, const battlespire::Bs6ModelInstance& inst) -> battlespire::Int3 {
+                const float kAngleScale = 6.28318530718f / 2048.0f;
+                float sx = (float)inst.scale / 1024.0f;
+                float x = (float)v.x * sx;
+                float y = (float)v.y * sx;
+                float z = (float)v.z * sx;
+
+                float yaw = inst.angles.y * kAngleScale;
+                float pitch = inst.angles.x * kAngleScale;
+                float roll = inst.angles.z * kAngleScale;
+
+                float cy = cosf(yaw), sy = sinf(yaw);
+                float cp = cosf(pitch), sp = sinf(pitch);
+                float cr = cosf(roll), sr = sinf(roll);
+
+                float x1 = cy * x + sy * z;
+                float z1 = -sy * x + cy * z;
+                float y2 = cp * y - sp * z1;
+                float z2 = sp * y + cp * z1;
+                float x3 = cr * x1 - sr * y2;
+                float y3 = sr * x1 + cr * y2;
+
+                battlespire::Int3 out{};
+                out.x = (int32_t)std::lround(x3 + inst.position.x);
+                out.y = (int32_t)std::lround(y3 + inst.position.y);
+                out.z = (int32_t)std::lround(z2 + inst.position.z);
+                return out;
+            };
+
+            payload->modelInstances = scene->models.size();
+            std::unordered_set<std::string> missingNames;
+
+            for (const auto& inst : scene->models) {
+                std::string modelKey = inst.modelName;
+                for (auto& c : modelKey) c = (char)toupper((unsigned char)c);
+                if (!modelKey.empty() && modelKey.find('.') == std::string::npos) modelKey += ".3D";
+
+                auto resolveEntry = [&](const std::string& key) -> const battlespire::BsaEntry* {
+                    const auto* e = modelsArchive->FindEntryCaseInsensitive(key);
+                    if (e) return e;
+                    size_t slash = key.find_last_of("/\\");
+                    if (slash != std::string::npos) {
+                        std::string bn = key.substr(slash + 1);
+                        e = modelsArchive->FindEntryCaseInsensitive(bn);
+                        if (e) return e;
+                    }
+                    size_t dot = key.find('.');
+                    if (dot != std::string::npos) {
+                        std::string stem = key.substr(0, dot);
+                        e = modelsArchive->FindEntryCaseInsensitive(stem + ".3D");
+                        if (e) return e;
+                    }
+                    return nullptr;
+                };
+
+                auto mit = meshCache.find(modelKey);
+                if (mit == meshCache.end()) {
+                    const auto* entry = resolveEntry(modelKey);
+                    if (!entry) {
+                        missingNames.insert(modelKey);
+                        continue;
+                    }
+                    std::vector<uint8_t> bytes;
+                    std::wstring err;
+                    if (!modelsArchive->ReadEntryData(*entry, bytes, &err)) {
+                        missingNames.insert(modelKey);
+                        continue;
+                    }
+                    battlespire::B3dMesh mesh;
+                    if (!battlespire::B3dMesh::TryParse(bytes, mesh, &err)) {
+                        missingNames.insert(modelKey);
+                        continue;
+                    }
+                    mit = meshCache.insert({ modelKey, std::move(mesh) }).first;
+                }
+
+                payload->resolvedInstances++;
+                const auto& mesh = mit->second;
+                for (const auto& face : mesh.faces) {
+                    PreviewFace pf{};
+                    pf.color = colorFromTextureTag(face.textureTag);
+                    for (uint32_t pi : face.pointIndices) {
+                        if (pi >= mesh.points.size()) continue;
+                        pf.worldPoints.push_back(applyTransform(mesh.points[pi], inst));
+                    }
+                    if (pf.worldPoints.size() >= 3) payload->modelFaces.push_back(std::move(pf));
+                }
+            }
+
+            payload->missingInstances = payload->modelInstances - payload->resolvedInstances;
+            if (payload->missingInstances > 0 && !missingNames.empty()) {
+                payload->label += L"  missing:" + std::to_wstring(payload->missingInstances);
+            }
+        }
+    }
+
+    PostMessageW(m_levelPreview, WM_LVL_SET_SCENE, (WPARAM)payload.release(), 0);
 }
 
 void MainWindow::PopulateTree() {
@@ -1049,6 +1501,8 @@ void MainWindow::StartTreeBuild() {
             };
 
             const bool isFlcBsa = (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"FLC.BSA") == 0);
+            const bool isBs6Bsa = (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"BS6.BSA") == 0);
+            const bool is3dBsa = (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"3D.BSA") == 0);
             if (isFlcBsa) {
                 std::vector<size_t> dialogueFlc;
                 std::vector<size_t> otherFlc;
@@ -1082,6 +1536,29 @@ void MainWindow::StartTreeBuild() {
 
                 insCat(L"Dialogue Voice Clips", dialogueFlc);
                 insCat(L"Other FLC Audio", otherFlc);
+                continue;
+            }
+
+            if (isBs6Bsa || is3dBsa) {
+                std::vector<size_t> sorted;
+                sorted.reserve(a.entries.size());
+                for (size_t ei = 0; ei < a.entries.size(); ++ei) sorted.push_back(ei);
+                std::stable_sort(sorted.begin(), sorted.end(), [&](size_t lhs, size_t rhs) {
+                    std::wstring ln = BaseNameOnly(winutil::WidenUtf8(a.entries[lhs].name));
+                    std::wstring rn = BaseNameOnly(winutil::WidenUtf8(a.entries[rhs].name));
+                    return ln < rn;
+                });
+
+                std::wstring cat = isBs6Bsa ? L"Level Files (.BS6)" : L"Model Files (.3D)";
+                cat += L" (" + std::to_wstring(sorted.size()) + L")";
+
+                TVINSERTSTRUCTW cins{};
+                cins.hParent = ah;
+                cins.hInsertAfter = TVI_LAST;
+                cins.item.mask = TVIF_TEXT;
+                cins.item.pszText = const_cast<wchar_t*>(cat.c_str());
+                HTREEITEM ch = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&cins);
+                for (size_t ei : sorted) insertEntryNode(ch, ei);
                 continue;
             }
 
@@ -1160,11 +1637,11 @@ void MainWindow::StartTreeBuild() {
 
 
                 if (IsMagicCategoryName(cat)) {
-                    TVITEMW ti{};
-                    ti.mask = TVIF_PARAM | TVIF_HANDLE;
-                    ti.hItem = ch;
-                    ti.lParam = (LPARAM)AddPayload(TreePayload::Kind::BsaMagicCombined, 0, (size_t)-1, ai, (size_t)-1);
-                    TreeView_SetItem(m_tree, &ti);
+                    TVITEMW tvi{};
+                    tvi.mask = TVIF_PARAM | TVIF_HANDLE;
+                    tvi.hItem = ch;
+                    tvi.lParam = (LPARAM)AddPayload(TreePayload::Kind::BsaMagicCombined, 0, (size_t)-1, ai, (size_t)-1);
+                    TreeView_SetItem(m_tree, &tvi);
                     continue;
                 }
 
@@ -1700,6 +2177,8 @@ void MainWindow::OnTreeSelChanged() {
     auto* p = GetSelectedPayload();
     if (!p) return;
 
+    SendLevelToPreview(nullptr, L"Awaiting.....");
+
     m_bsaDialogueKind = BsaDialogueKind::None;
     m_bsaDialogueRows.clear();
     m_bsaDialogueHeaders.clear();
@@ -1808,6 +2287,38 @@ void MainWindow::OnTreeSelChanged() {
 
         std::wstring preview;
         bool renderedTable = false;
+
+        std::wstring entryNameLower = ToLowerWs(winutil::WidenUtf8(e.name));
+        bool looksLikeBs6 = EndsWithWs(entryNameLower, L".bs6");
+        bool looksLike3d = EndsWithWs(entryNameLower, L".3d");
+        if (looksLikeBs6) {
+            battlespire::Bs6FileSummary bs6;
+            std::wstring perr;
+            if (battlespire::Bs6FileSummary::TrySummarize(bytes, bs6, &perr)) {
+                SetWindowTextW(m_preview, BuildBs6SummaryPreview(bs6).c_str());
+
+                battlespire::Bs6Scene scene;
+                std::wstring serr;
+                if (battlespire::Bs6Scene::TryBuildFromBytes(bytes, scene, &serr)) {
+                    SendLevelToPreview(&scene, winutil::WidenUtf8(e.name));
+                } else {
+                    SendLevelToPreview(nullptr, L"Awaiting.....");
+                }
+
+                m_viewMode = ViewMode::BsaEntry;
+                return;
+            }
+        }
+        else if (looksLike3d) {
+            battlespire::B3dFileSummary b3d;
+            std::wstring perr;
+            if (battlespire::B3dFileSummary::TryParse(bytes, b3d, &perr)) {
+                SetWindowTextW(m_preview, BuildB3dSummaryPreview(b3d).c_str());
+                m_viewMode = ViewMode::BsaEntry;
+                return;
+            }
+        }
+
         if (IsLikelyUtf8Printable(bytes)) {
             std::wstring nameLow = ToLowerWs(winutil::WidenUtf8(e.name));
             std::string text(bytes.begin(), bytes.end());
