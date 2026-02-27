@@ -5,6 +5,7 @@
 #include "../export/CsvWriter.h"
 #include "../arena2/QuestOpcodeDisasm.h"
 #include "../battlespire/BattlespireFormats.h"
+#include <cmath>
 
 namespace ui {
 
@@ -31,9 +32,18 @@ static constexpr UINT IDM_BSA_ENTRY_SPEAK = 42002;
 
 static constexpr UINT WM_LVL_SET_SCENE = WM_APP + 120;
 
+struct PreviewFace {
+    std::vector<battlespire::Int3> worldPoints;
+    COLORREF color{ RGB(180, 180, 180) };
+};
+
 struct LevelPreviewScene {
     std::vector<battlespire::Int3> markers;
     std::vector<battlespire::Bs6SceneBox> boxes;
+    std::vector<PreviewFace> modelFaces;
+    size_t modelInstances{};
+    size_t resolvedInstances{};
+    size_t missingInstances{};
     std::wstring label;
 };
 
@@ -112,6 +122,27 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         drawLine3(c[5], c[1]); drawLine3(c[5], c[2]); drawLine3(c[5], c[3]);
     }
 
+    for (const auto& face : s.scene->modelFaces) {
+        std::vector<POINT> pts;
+        pts.reserve(face.worldPoints.size());
+        for (const auto& wp : face.worldPoints) {
+            POINT p{};
+            if (!ProjectPoint(s, w, h, (float)wp.x, (float)wp.y, (float)wp.z, p)) continue;
+            pts.push_back(p);
+        }
+        if (pts.size() < 3) continue;
+
+        HPEN facePen = CreatePen(PS_SOLID, 1, face.color);
+        HBRUSH faceBrush = CreateSolidBrush(RGB(GetRValue(face.color) / 5, GetGValue(face.color) / 5, GetBValue(face.color) / 5));
+        HGDIOBJ oldPen = SelectObject(hdc, facePen);
+        HGDIOBJ oldBrush = SelectObject(hdc, faceBrush);
+        Polygon(hdc, pts.data(), (int)pts.size());
+        SelectObject(hdc, oldPen);
+        SelectObject(hdc, oldBrush);
+        DeleteObject(facePen);
+        DeleteObject(faceBrush);
+    }
+
     SelectObject(hdc, penPoint);
     for (const auto& m : s.scene->markers) {
         POINT p{};
@@ -122,7 +153,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     DeleteObject(penBox);
     DeleteObject(penPoint);
 
-    std::wstring msg = s.scene->label + L"  (WASD move, click+drag rotate)";
+    std::wstring msg = s.scene->label + L"  models " + std::to_wstring(s.scene->resolvedInstances) + L"/" + std::to_wstring(s.scene->modelInstances) + L"  (WASD move, click+drag rotate)";
     DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
 }
 
@@ -149,9 +180,13 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
     case WM_LVL_SET_SCENE:
         if (s) {
             std::unique_ptr<LevelPreviewScene> scene(reinterpret_cast<LevelPreviewScene*>(wParam));
-            s->scene = std::move(scene);
-            if (s->scene) {
+            if (!scene || (scene->markers.empty() && scene->boxes.empty() && scene->modelFaces.empty())) {
+                s->scene.reset();
+                s->status = scene && !scene->label.empty() ? scene->label : L"Awaiting.....";
+            }
+            else {
                 s->status = L"Loaded";
+                s->scene = std::move(scene);
             }
             InvalidateRect(hwnd, nullptr, FALSE);
         }
@@ -1179,6 +1214,120 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
     if (scene) {
         payload->markers = scene->markers;
         payload->boxes = scene->boxes;
+
+        auto* modelsArchive = [&]() -> const battlespire::BsaArchive* {
+            for (const auto& a : m_bsaArchives) {
+                if (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"3D.BSA") == 0) return &a;
+            }
+            return nullptr;
+        }();
+
+        if (modelsArchive) {
+            std::unordered_map<std::string, battlespire::B3dMesh> meshCache;
+
+            auto colorFromTextureTag = [](const std::array<uint8_t, 6>& t) -> COLORREF {
+                uint32_t h = 2166136261u;
+                for (uint8_t b : t) h = (h ^ b) * 16777619u;
+                uint8_t r = uint8_t(64 + (h & 0x7F));
+                uint8_t g = uint8_t(64 + ((h >> 8) & 0x7F));
+                uint8_t b = uint8_t(64 + ((h >> 16) & 0x7F));
+                return RGB(r, g, b);
+            };
+
+            auto applyTransform = [](const battlespire::Int3& v, const battlespire::Bs6ModelInstance& inst) -> battlespire::Int3 {
+                const float kAngleScale = 6.28318530718f / 2048.0f;
+                float sx = (float)inst.scale / 1024.0f;
+                float x = (float)v.x * sx;
+                float y = (float)v.y * sx;
+                float z = (float)v.z * sx;
+
+                float yaw = inst.angles.y * kAngleScale;
+                float pitch = inst.angles.x * kAngleScale;
+                float roll = inst.angles.z * kAngleScale;
+
+                float cy = cosf(yaw), sy = sinf(yaw);
+                float cp = cosf(pitch), sp = sinf(pitch);
+                float cr = cosf(roll), sr = sinf(roll);
+
+                float x1 = cy * x + sy * z;
+                float z1 = -sy * x + cy * z;
+                float y2 = cp * y - sp * z1;
+                float z2 = sp * y + cp * z1;
+                float x3 = cr * x1 - sr * y2;
+                float y3 = sr * x1 + cr * y2;
+
+                battlespire::Int3 out{};
+                out.x = (int32_t)std::lround(x3 + inst.position.x);
+                out.y = (int32_t)std::lround(y3 + inst.position.y);
+                out.z = (int32_t)std::lround(z2 + inst.position.z);
+                return out;
+            };
+
+            payload->modelInstances = scene->models.size();
+            std::unordered_set<std::string> missingNames;
+
+            for (const auto& inst : scene->models) {
+                std::string modelKey = inst.modelName;
+                for (auto& c : modelKey) c = (char)toupper((unsigned char)c);
+                if (!modelKey.empty() && modelKey.find('.') == std::string::npos) modelKey += ".3D";
+
+                auto resolveEntry = [&](const std::string& key) -> const battlespire::BsaEntry* {
+                    const auto* e = modelsArchive->FindEntryCaseInsensitive(key);
+                    if (e) return e;
+                    size_t slash = key.find_last_of("/\\");
+                    if (slash != std::string::npos) {
+                        std::string bn = key.substr(slash + 1);
+                        e = modelsArchive->FindEntryCaseInsensitive(bn);
+                        if (e) return e;
+                    }
+                    size_t dot = key.find('.');
+                    if (dot != std::string::npos) {
+                        std::string stem = key.substr(0, dot);
+                        e = modelsArchive->FindEntryCaseInsensitive(stem + ".3D");
+                        if (e) return e;
+                    }
+                    return nullptr;
+                };
+
+                auto mit = meshCache.find(modelKey);
+                if (mit == meshCache.end()) {
+                    const auto* entry = resolveEntry(modelKey);
+                    if (!entry) {
+                        missingNames.insert(modelKey);
+                        continue;
+                    }
+                    std::vector<uint8_t> bytes;
+                    std::wstring err;
+                    if (!modelsArchive->ReadEntryData(*entry, bytes, &err)) {
+                        missingNames.insert(modelKey);
+                        continue;
+                    }
+                    battlespire::B3dMesh mesh;
+                    if (!battlespire::B3dMesh::TryParse(bytes, mesh, &err)) {
+                        missingNames.insert(modelKey);
+                        continue;
+                    }
+                    mit = meshCache.insert({ modelKey, std::move(mesh) }).first;
+                }
+
+                payload->resolvedInstances++;
+                const auto& mesh = mit->second;
+                for (const auto& face : mesh.faces) {
+                    PreviewFace pf{};
+                    pf.color = colorFromTextureTag(face.textureTag);
+                    for (uint32_t pi : face.pointIndices) {
+                        if (pi >= mesh.points.size()) continue;
+                        pf.worldPoints.push_back(applyTransform(mesh.points[pi], inst));
+                    }
+                    if (pf.worldPoints.size() >= 3) payload->modelFaces.push_back(std::move(pf));
+                }
+            }
+
+            payload->missingInstances = payload->modelInstances - payload->resolvedInstances;
+            if (payload->missingInstances > 0 && !missingNames.empty()) {
+                payload->label += L"  missing:" + std::to_wstring(payload->missingInstances);
+            }
+        }
     }
 
     PostMessageW(m_levelPreview, WM_LVL_SET_SCENE, (WPARAM)payload.release(), 0);

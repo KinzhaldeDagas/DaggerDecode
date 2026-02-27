@@ -81,11 +81,33 @@ struct Bs6SceneBox {
     std::array<Int3, 6> corners{};
 };
 
+struct Bs6ModelInstance {
+    std::string modelName;
+    Int3 position{};
+    Int3 angles{};
+    int32_t scale{ 1024 };
+};
+
 struct Bs6Scene {
     std::vector<Int3> markers;
     std::vector<Bs6SceneBox> boxes;
+    std::vector<Bs6ModelInstance> models;
+    std::vector<std::string> unresolvedModelNames;
 
     static bool TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& out, std::wstring* err);
+};
+
+struct B3dFace {
+    std::vector<uint32_t> pointIndices;
+    std::array<uint8_t, 6> textureTag{};
+};
+
+struct B3dMesh {
+    char version[5]{};
+    std::vector<Int3> points;
+    std::vector<B3dFace> faces;
+
+    static bool TryParse(const std::vector<uint8_t>& bytes, B3dMesh& out, std::wstring* err);
 };
 
 struct B3dFileSummary {
