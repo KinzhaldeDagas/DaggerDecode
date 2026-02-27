@@ -6,6 +6,7 @@
 #include "../arena2/QuestOpcodeDisasm.h"
 #include "../battlespire/BattlespireFormats.h"
 #include <cmath>
+#include <unordered_set>
 
 namespace ui {
 
@@ -155,6 +156,56 @@ static std::unordered_map<std::string, std::vector<std::string>> LoadBsiFamilyIn
     return out;
 }
 
+
+
+struct B3dResearchBounds {
+    uint32_t maxPoints{};
+    uint32_t maxPlanes{};
+    std::unordered_set<std::string> knownFiles;
+};
+
+static B3dResearchBounds LoadB3dResearchBounds() {
+    B3dResearchBounds out{};
+    std::ifstream f("batspire/research_phase1/b3d_diagnostics.csv", std::ios::binary);
+    if (!f) return out;
+
+    std::string line;
+    if (!std::getline(f, line)) return out;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        std::vector<std::string> cols;
+        std::string cur;
+        for (char c : line) {
+            if (c == ',') {
+                cols.push_back(cur);
+                cur.clear();
+            }
+            else if (c != '\r' && c != '\n') {
+                cur.push_back(c);
+            }
+        }
+        cols.push_back(cur);
+        if (cols.size() < 3) continue;
+
+        const std::string file = NormalizeTextureStem(cols[0]);
+        if (!file.empty()) out.knownFiles.insert(file);
+
+        try {
+            uint32_t points = (uint32_t)std::stoul(cols[1]);
+            uint32_t planes = (uint32_t)std::stoul(cols[2]);
+            out.maxPoints = std::max(out.maxPoints, points);
+            out.maxPlanes = std::max(out.maxPlanes, planes);
+        }
+        catch (...) {
+        }
+    }
+    return out;
+}
+
+static const B3dResearchBounds& GetB3dResearchBounds() {
+    static const B3dResearchBounds s = LoadB3dResearchBounds();
+    return s;
+}
 struct BsiPreviewTexture {
     int width{};
     int height{};
@@ -334,7 +385,7 @@ static void RefreshTextureSourceArchives(const std::vector<battlespire::BsaArchi
     for (const auto& a : archives) {
         std::wstring wn = a.sourcePath.filename().wstring();
         for (auto& c : wn) c = (wchar_t)towlower(c);
-        if (wn == L"3d.bsa" || wn == L"waves.bsa" || wn == L"txt.bsa") continue;
+        if (wn == L"waves.bsa" || wn == L"txt.bsa") continue;
         out.push_back(&a);
     }
 }
@@ -606,6 +657,8 @@ struct LevelPreviewState {
     POINT lastMouse{};
     std::array<bool, 256> keys{};
     bool bilinearSampling = false;
+    bool wireframeMode = false;
+    bool renderDirectX = false;
     LevelPreviewBackBuffer backBuffer;
     ULONGLONG lastTickMs = 0;
     ULONGLONG fpsWindowStartMs = 0;
@@ -912,7 +965,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         drawLine3(c[5], c[1]); drawLine3(c[5], c[2]); drawLine3(c[5], c[3]);
     }
 
-    if (!movementActive) for (const auto& df : drawFaces) {
+    if (s.wireframeMode) for (const auto& df : drawFaces) {
         if (df.pts.size() < 3) continue;
         const COLORREF outline = (df.hasUvTexture && df.uvs.size() == df.pts.size())
             ? RGB(GetRValue(df.color) / 3, GetGValue(df.color) / 3, GetBValue(df.color) / 3)
@@ -943,7 +996,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         L"  LITD/LITS " + std::to_wstring(s.scene->litdCount) + L"/" + std::to_wstring(s.scene->litsCount) +
         L"  FLAD/FLAS " + std::to_wstring(s.scene->fladCount) + L"/" + std::to_wstring(s.scene->flasCount) +
         L"  RAWD " + std::to_wstring(s.scene->rawdCount) + fpsBuf +
-        L"  (WASD move, Shift 2x, Q/E vertical, click+drag rotate, B toggle bilinear, z-tested perspective UV raster, event-driven redraw, buffered frame upload, adaptive motion sampling)";
+        L"  (WASD move, Shift 6x, Q/E vertical, click+drag rotate, B: Toggle Bilinear, F: Toggle Wireframe, R: Render DirectX " + std::wstring(s.renderDirectX ? L"ON" : L"OFF") + L")";
     DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
 }
 
@@ -986,6 +1039,8 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
     case WM_KEYDOWN:
         if (s && wParam < s->keys.size()) s->keys[wParam] = true;
         if (s && (wParam == 'B' || wParam == 'b')) { s->bilinearSampling = !s->bilinearSampling; InvalidateRect(hwnd, nullptr, FALSE); }
+        if (s && (wParam == 'F' || wParam == 'f')) { s->wireframeMode = !s->wireframeMode; InvalidateRect(hwnd, nullptr, FALSE); }
+        if (s && (wParam == 'R' || wParam == 'r')) { s->renderDirectX = !s->renderDirectX; InvalidateRect(hwnd, nullptr, FALSE); }
         return 0;
     case WM_KEYUP:
         if (s && wParam < s->keys.size()) {
@@ -1029,7 +1084,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             s->lastTickMs = nowMs;
             float dt = std::min(0.05f, std::max(0.001f, float(dtMsU) / 1000.0f));
 
-            float baseSpeed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) ? 6000.0f : 3000.0f;
+            float baseSpeed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) ? 18000.0f : 3000.0f;
             float speed = baseSpeed * dt;
             float fy = cosf(s->yaw), fx = sinf(s->yaw);
             bool moved = false;
@@ -1063,7 +1118,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
                 s->fpsWindowStartMs = frameEnd;
             }
             wchar_t title[128]{};
-            swprintf_s(title, L"Level Preview - %.1f FPS", s->fps);
+            swprintf_s(title, L"Level Preview - %.1f FPS [%s]", s->fps, s->renderDirectX ? L"DirectX" : L"Software");
             SetWindowTextW(hwnd, title);
             EndPaint(hwnd, &ps);
             return 0;
@@ -2136,8 +2191,9 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
             static constexpr size_t kMaxUniqueMeshes = 2048;
             static constexpr uint32_t kMaxMeshBytes = 8u * 1024u * 1024u;
             // Research phase1 tops out around ~672 points / ~1050 planes; keep generous safety headroom.
-            static constexpr uint32_t kMaxMeshPoints = 8192;
-            static constexpr uint32_t kMaxMeshPlanes = 8192;
+            const auto& b3dResearch = GetB3dResearchBounds();
+            uint32_t kMaxMeshPoints = std::max<uint32_t>(8192, b3dResearch.maxPoints * 2u + 128u);
+            uint32_t kMaxMeshPlanes = std::max<uint32_t>(8192, b3dResearch.maxPlanes * 2u + 128u);
             payload->modelInstances = std::min(scene->models.size(), kMaxPreviewModels);
             std::unordered_set<std::string> missingNames;
             size_t invalidMeshInstances = 0;
@@ -2226,7 +2282,14 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
                     PreviewFace pf{};
                     pf.color = colorFromTextureTag(face.textureTag, modelStem);
                     pf.textureTag = face.textureTag;
-                    pf.textureStemHint = modelStem;
+                    const auto& b3dResearch = GetB3dResearchBounds();
+                    std::string modelKeyStem = NormalizeTextureStem(modelKey);
+                    if (!modelKeyStem.empty() && b3dResearch.knownFiles.find(modelKeyStem) != b3dResearch.knownFiles.end()) {
+                        pf.textureStemHint = modelKeyStem;
+                    }
+                    else {
+                        pf.textureStemHint = modelStem;
+                    }
                     pf.hasUvTexture = (face.uvs.size() == face.pointIndices.size() && !face.uvs.empty());
                     if (pf.hasUvTexture) {
                         pf.uvs.reserve(face.uvs.size());
