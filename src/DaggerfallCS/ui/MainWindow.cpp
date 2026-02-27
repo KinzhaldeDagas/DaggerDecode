@@ -65,6 +65,61 @@ static std::unordered_map<std::string, std::string> LoadBoundTextureBindings() {
 }
 
 
+static std::unordered_map<std::string, std::vector<std::string>> LoadTextureFamilyFallbacks() {
+    std::unordered_map<std::string, std::vector<std::string>> out;
+    std::ifstream f("batspire/research_phase2/texture_tag_bindings_family_candidates.csv", std::ios::binary);
+    if (!f) return out;
+
+    std::string line;
+    if (!std::getline(f, line)) return out;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        std::vector<std::string> cols;
+        std::string cur;
+        for (char c : line) {
+            if (c == ',') {
+                cols.push_back(cur);
+                cur.clear();
+            }
+            else if (c != '\r' && c != '\n') {
+                cur.push_back(c);
+            }
+        }
+        cols.push_back(cur);
+        if (cols.size() < 8) continue;
+        const std::string& tag = cols[0];
+        const std::string& examples = cols[7];
+        if (tag.size() != 12 || examples.empty()) continue;
+
+        std::vector<std::string> stems;
+        size_t i = 0;
+        while (i < examples.size()) {
+            size_t j = examples.find(" | ", i);
+            std::string token = (j == std::string::npos) ? examples.substr(i) : examples.substr(i, j - i);
+            size_t b = 0, e = token.size();
+            while (b < e && isspace((unsigned char)token[b])) ++b;
+            while (e > b && isspace((unsigned char)token[e - 1])) --e;
+            token = token.substr(b, e - b);
+            if (!token.empty()) stems.push_back(token);
+            if (j == std::string::npos) break;
+            i = j + 3;
+        }
+
+        if (!stems.empty()) out[tag] = std::move(stems);
+    }
+    return out;
+}
+
+static std::string NormalizeTextureStem(std::string stem) {
+    for (char& c : stem) c = (char)tolower((unsigned char)c);
+    size_t slash = stem.find_last_of("/\\");
+    if (slash != std::string::npos) stem = stem.substr(slash + 1);
+    if (stem.size() > 4 && stem.substr(stem.size() - 4) == ".bsi") stem.resize(stem.size() - 4);
+    if (stem.size() > 3 && stem.substr(stem.size() - 3) == ".3d") stem.resize(stem.size() - 3);
+    return stem;
+}
+
+
 
 struct BsiPreviewTexture {
     int width{};
@@ -198,6 +253,16 @@ static const std::unordered_map<std::string, std::string>& BoundTagToStem() {
     return s;
 }
 
+static const std::unordered_map<std::string, std::vector<std::string>>& TextureFamilyFallbacks() {
+    static const auto s = LoadTextureFamilyFallbacks();
+    return s;
+}
+
+static std::unordered_map<std::string, std::string>& TextureResolveCache() {
+    static std::unordered_map<std::string, std::string> s;
+    return s;
+}
+
 static std::unordered_map<std::string, BsiPreviewTexture>& BsiTextureCache() {
     static std::unordered_map<std::string, BsiPreviewTexture> s;
     return s;
@@ -211,6 +276,7 @@ static std::vector<const battlespire::BsaArchive*>& TextureSourceArchives() {
 static void RefreshTextureSourceArchives(const std::vector<battlespire::BsaArchive>& archives) {
     auto& out = TextureSourceArchives();
     out.clear();
+    TextureResolveCache().clear();
     for (const auto& a : archives) {
         std::wstring wn = a.sourcePath.filename().wstring();
         for (auto& c : wn) c = (wchar_t)towlower(c);
@@ -232,7 +298,9 @@ static bool TryDecodeBsiFromAnyOffset(const std::vector<uint8_t>& bytes, BsiPrev
     return false;
 }
 
-static const BsiPreviewTexture* TryGetTextureByStem(const std::string& stem) {
+static const BsiPreviewTexture* TryGetTextureByStem(const std::string& stemIn) {
+    std::string stem = NormalizeTextureStem(stemIn);
+    if (stem.empty()) return nullptr;
     auto& cache = BsiTextureCache();
     auto it = cache.find(stem);
     if (it == cache.end()) {
@@ -270,14 +338,42 @@ static const BsiPreviewTexture* TryGetTextureByStem(const std::string& stem) {
 
 static const BsiPreviewTexture* TryGetTextureForFace(const std::array<uint8_t, 6>& tag, const std::string& stemHint) {
     const std::string tagHex = TextureTagHex(tag);
+
+    auto& resolveCache = TextureResolveCache();
+    auto rc = resolveCache.find(tagHex);
+    if (rc != resolveCache.end() && !rc->second.empty()) {
+        if (const auto* t = TryGetTextureByStem(rc->second)) return t;
+    }
+
     const auto& bound = BoundTagToStem();
     auto bt = bound.find(tagHex);
     if (bt != bound.end()) {
-        if (const auto* t = TryGetTextureByStem(bt->second)) return t;
+        if (const auto* t = TryGetTextureByStem(bt->second)) {
+            resolveCache[tagHex] = bt->second;
+            return t;
+        }
     }
+
     if (!stemHint.empty()) {
-        if (const auto* t = TryGetTextureByStem(stemHint)) return t;
+        if (const auto* t = TryGetTextureByStem(stemHint)) {
+            resolveCache[tagHex] = stemHint;
+            return t;
+        }
     }
+
+    const auto& families = TextureFamilyFallbacks();
+    auto ft = families.find(tagHex);
+    if (ft != families.end()) {
+        size_t tried = 0;
+        for (const auto& stem : ft->second) {
+            if (const auto* t = TryGetTextureByStem(stem)) {
+                resolveCache[tagHex] = stem;
+                return t;
+            }
+            if (++tried >= 8) break;
+        }
+    }
+
     return nullptr;
 }
 
@@ -374,6 +470,30 @@ struct LevelPreviewScene {
     std::wstring label;
 };
 
+struct LevelPreviewBackBuffer {
+    int width{};
+    int height{};
+    std::vector<uint32_t> color;
+    std::vector<float> depth;
+
+    bool EnsureSize(int w, int h) {
+        if (w <= 0 || h <= 0) return false;
+        if (width == w && height == h && !color.empty() && !depth.empty()) return true;
+        const size_t n = size_t(w) * size_t(h);
+        if (n == 0 || n > 2500000u) return false;
+        width = w;
+        height = h;
+        color.assign(n, 0x00101010u);
+        depth.assign(n, 1.0e30f);
+        return true;
+    }
+
+    void ResetFrame() {
+        std::fill(color.begin(), color.end(), 0x00101010u);
+        std::fill(depth.begin(), depth.end(), 1.0e30f);
+    }
+};
+
 struct LevelPreviewState {
     HWND hwnd{};
     std::unique_ptr<LevelPreviewScene> scene;
@@ -387,6 +507,8 @@ struct LevelPreviewState {
     POINT lastMouse{};
     std::array<bool, 256> keys{};
     bool bilinearSampling = false;
+    LevelPreviewBackBuffer backBuffer;
+    ULONGLONG lastTickMs = 0;
 };
 
 static void DrawTextBottomRight(HDC hdc, RECT rc, const std::wstring& text, COLORREF color) {
@@ -424,11 +546,10 @@ static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, floa
 }
 
 static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
-    HBRUSH bg = CreateSolidBrush(RGB(0, 0, 0));
-    FillRect(hdc, &rc, bg);
-    DeleteObject(bg);
-
     if (!s.scene) {
+        HBRUSH bg = CreateSolidBrush(RGB(0, 0, 0));
+        FillRect(hdc, &rc, bg);
+        DeleteObject(bg);
         DrawTextBottomRight(hdc, rc, s.status, RGB(180, 180, 180));
         return;
     }
@@ -436,13 +557,10 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     int w = rc.right - rc.left;
     int h = rc.bottom - rc.top;
     if (w <= 1 || h <= 1) return;
-    if (w * h > 2500000) return;
-
-    std::vector<uint32_t> colorBuffer;
-    colorBuffer.assign(size_t(w) * size_t(h), 0u);
-
-    std::vector<float> zBuffer;
-    zBuffer.assign(size_t(w) * size_t(h), 1.0e30f);
+    if (!s.backBuffer.EnsureSize(w, h)) return;
+    s.backBuffer.ResetFrame();
+    auto& colorBuffer = s.backBuffer.color;
+    auto& zBuffer = s.backBuffer.depth;
 
     auto toBgr32 = [](COLORREF c) -> uint32_t {
         return (uint32_t(GetRValue(c)) << 16) | (uint32_t(GetGValue(c)) << 8) | uint32_t(GetBValue(c));
@@ -675,7 +793,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     DeleteObject(penBox);
     DeleteObject(penPoint);
 
-    std::wstring msg = s.scene->label + L"  models " + std::to_wstring(s.scene->resolvedInstances) + L"/" + std::to_wstring(s.scene->modelInstances) + L"  (WASD move, click+drag rotate, B toggle bilinear, z-tested perspective UV raster, event-driven redraw)";
+    std::wstring msg = s.scene->label + L"  models " + std::to_wstring(s.scene->resolvedInstances) + L"/" + std::to_wstring(s.scene->modelInstances) + L"  (WASD move, Shift 2x, Q/E vertical, click+drag rotate, B toggle bilinear, z-tested perspective UV raster, event-driven redraw, buffered frame upload)";
     DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
 }
 
@@ -687,6 +805,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         s = reinterpret_cast<LevelPreviewState*>(cs->lpCreateParams);
         s->hwnd = hwnd;
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)s);
+        s->lastTickMs = GetTickCount64();
         SetTimer(hwnd, 1, 16, nullptr);
         return 0;
     }
@@ -750,13 +869,21 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         return 0;
     case WM_TIMER:
         if (s) {
-            float speed = 50.0f;
+            ULONGLONG nowMs = GetTickCount64();
+            ULONGLONG dtMsU = (s->lastTickMs > 0 && nowMs >= s->lastTickMs) ? (nowMs - s->lastTickMs) : 16;
+            s->lastTickMs = nowMs;
+            float dt = std::min(0.05f, std::max(0.001f, float(dtMsU) / 1000.0f));
+
+            float baseSpeed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) ? 6000.0f : 3000.0f;
+            float speed = baseSpeed * dt;
             float fy = cosf(s->yaw), fx = sinf(s->yaw);
             bool moved = false;
             if (s->keys['W']) { s->camX += fx * speed; s->camZ += fy * speed; moved = true; }
             if (s->keys['S']) { s->camX -= fx * speed; s->camZ -= fy * speed; moved = true; }
             if (s->keys['A']) { s->camX -= fy * speed; s->camZ += fx * speed; moved = true; }
             if (s->keys['D']) { s->camX += fy * speed; s->camZ -= fx * speed; moved = true; }
+            if (s->keys['Q']) { s->camY += speed; moved = true; }
+            if (s->keys['E']) { s->camY -= speed; moved = true; }
             if (moved) InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
