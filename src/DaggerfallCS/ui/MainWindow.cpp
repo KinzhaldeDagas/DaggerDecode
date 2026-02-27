@@ -258,6 +258,60 @@ static std::wstring ClassifyTxtBsaEntryCategory(const std::string& entryNameUtf8
     return L"Non-TXT";
 }
 
+static int DialogueVariantRank(wchar_t v) {
+    switch ((wchar_t)towlower(v)) {
+    case L'b': return 0;
+    case L't': return 1;
+    case L'm': return 2;
+    case L'f': return 3;
+    default: return 99;
+    }
+}
+
+static bool TryParseDialogueBundleName(const std::wstring& name, std::wstring& questCode, int& level, wchar_t& variant) {
+    static const std::wregex reDialogueParts(LR"(^([a-z]{2})(\d+)([btmf])\.txt$)");
+    std::wsmatch m;
+    if (!std::regex_match(name, m, reDialogueParts)) return false;
+
+    questCode = m[1].str();
+    level = _wtoi(m[2].str().c_str());
+    variant = m[3].str().empty() ? L'?' : m[3].str()[0];
+    return true;
+}
+
+static void SortBsaCategoryEntries(const battlespire::BsaArchive& a, const std::wstring& cat, std::vector<size_t>& entries) {
+    if (entries.size() < 2) return;
+
+    if (_wcsicmp(cat.c_str(), L"Dialogue Bundles") == 0) {
+        std::stable_sort(entries.begin(), entries.end(), [&](size_t lhs, size_t rhs) {
+            const std::wstring ln = BaseNameOnly(winutil::WidenUtf8(a.entries[lhs].name));
+            const std::wstring rn = BaseNameOnly(winutil::WidenUtf8(a.entries[rhs].name));
+
+            std::wstring lq, rq;
+            int ll = 0, rl = 0;
+            wchar_t lv = 0, rv = 0;
+            const bool lok = TryParseDialogueBundleName(ln, lq, ll, lv);
+            const bool rok = TryParseDialogueBundleName(rn, rq, rl, rv);
+            if (lok && rok) {
+                int qcmp = _wcsicmp(lq.c_str(), rq.c_str());
+                if (qcmp != 0) return qcmp < 0;   // quest/group
+                if (ll != rl) return ll < rl;      // level/index
+                if (lv != rv) return DialogueVariantRank(lv) < DialogueVariantRank(rv); // variant (b/t/m/f)
+                return ln < rn;
+            }
+            if (lok != rok) return lok; // parsed dialogue bundles first
+            return ln < rn;
+        });
+        return;
+    }
+
+    std::stable_sort(entries.begin(), entries.end(), [&](size_t lhs, size_t rhs) {
+        std::wstring ln = BaseNameOnly(winutil::WidenUtf8(a.entries[lhs].name));
+        std::wstring rn = BaseNameOnly(winutil::WidenUtf8(a.entries[rhs].name));
+        return ln < rn;
+    });
+}
+
 static bool IsDialogueScriptHeaderCell(const std::wstring& cell) {
     std::wstring c = ToLowerWs(TrimWs(cell));
     return c == L"saycode" || c == L"npc say" || c == L"replycode" || c == L"pc reply" || c == L"do this action" || c == L"goto";
@@ -638,6 +692,8 @@ void MainWindow::StartTreeBuild() {
                 auto it = txtCategories.find(cat);
                 if (it == txtCategories.end() || it->second.empty()) continue;
 
+                SortBsaCategoryEntries(a, cat, it->second);
+
                 std::wstring cLabel = cat + L" (" + std::to_wstring(it->second.size()) + L")";
                 TVINSERTSTRUCTW cins{};
                 cins.hParent = ah;
@@ -650,6 +706,12 @@ void MainWindow::StartTreeBuild() {
             }
 
             if (!nonTxt.empty()) {
+                std::stable_sort(nonTxt.begin(), nonTxt.end(), [&](size_t lhs, size_t rhs) {
+                    std::wstring ln = BaseNameOnly(winutil::WidenUtf8(a.entries[lhs].name));
+                    std::wstring rn = BaseNameOnly(winutil::WidenUtf8(a.entries[rhs].name));
+                    return ln < rn;
+                });
+
                 std::wstring cLabel = L"Non-TXT (" + std::to_wstring(nonTxt.size()) + L")";
                 TVINSERTSTRUCTW cins{};
                 cins.hParent = ah;
