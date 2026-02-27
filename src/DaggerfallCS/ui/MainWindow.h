@@ -52,7 +52,7 @@ private:
     };
 
     struct TreePayload {
-        enum class Kind { TextRecord, QuestsRoot, Quest, QuestStages, QuestText, BsaRoot, BsaArchive, BsaEntry };
+        enum class Kind { TextRecord, QuestsRoot, Quest, QuestStages, QuestText, BsaRoot, BsaArchive, BsaEntry, BsaMagicCombined };
         Kind kind{ Kind::TextRecord };
         uint16_t textRecordId{};
         size_t questIndex{};
