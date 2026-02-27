@@ -1,0 +1,9 @@
+rawd_length,count,hypothesis
+4,1683,unknown
+8,759,likely compact params (id/value pairs?)
+16,983,unknown
+24,878,vector-ish triplets/transform adjunct
+28,48,unknown
+30,55,unknown
+32,719,material/control payload candidate
+52,659,unknown
