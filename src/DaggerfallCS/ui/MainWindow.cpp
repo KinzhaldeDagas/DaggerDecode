@@ -6,6 +6,7 @@
 #include "../arena2/QuestOpcodeDisasm.h"
 #include "../battlespire/BattlespireFormats.h"
 #include <cmath>
+#include <deque>
 #include <unordered_set>
 
 namespace ui {
@@ -369,6 +370,16 @@ static std::unordered_map<std::string, BsiPreviewTexture>& BsiTextureCache() {
     return s;
 }
 
+static std::deque<std::string>& TextureStreamQueue() {
+    static std::deque<std::string> s;
+    return s;
+}
+
+static std::unordered_set<std::string>& TextureStreamQueuedSet() {
+    static std::unordered_set<std::string> s;
+    return s;
+}
+
 static constexpr size_t kMaxTextureCacheEntries = 4096;
 static const std::string kMissResolveStem = "__MISS__";
 
@@ -382,6 +393,8 @@ static void RefreshTextureSourceArchives(const std::vector<battlespire::BsaArchi
     out.clear();
     TextureResolveCache().clear();
     BsiTextureCache().clear();
+    TextureStreamQueue().clear();
+    TextureStreamQueuedSet().clear();
     for (const auto& a : archives) {
         std::wstring wn = a.sourcePath.filename().wstring();
         for (auto& c : wn) c = (wchar_t)towlower(c);
@@ -408,46 +421,71 @@ static bool TryDecodeBsiFromAnyOffset(const std::vector<uint8_t>& bytes, BsiPrev
     return false;
 }
 
-static const BsiPreviewTexture* TryGetTextureByStem(const std::string& stemIn) {
+static BsiPreviewTexture LoadTextureByStemSync(const std::string& stem) {
+    BsiPreviewTexture tex{};
+    std::vector<uint8_t> bytes;
+
+    std::ifstream tf("batspire/bsi_extracted/" + stem + ".BSI", std::ios::binary);
+    if (tf) {
+        tf.seekg(0, std::ios::end);
+        size_t n = (size_t)tf.tellg();
+        tf.seekg(0, std::ios::beg);
+        if (n > 0 && n <= kMaxBsiBytes) {
+            bytes.resize(n);
+            tf.read(reinterpret_cast<char*>(bytes.data()), (std::streamsize)n);
+            if (tf.good() || tf.eof()) TryDecodeBsiFromAnyOffset(bytes, tex);
+        }
+    }
+
+    if (tex.indices.empty()) {
+        const std::string name = stem + ".BSI";
+        for (const auto* arc : TextureSourceArchives()) {
+            if (!arc) continue;
+            const auto* e = arc->FindEntryCaseInsensitive(name);
+            if (!e) continue;
+            std::wstring err;
+            std::vector<uint8_t> arcBytes;
+            if (!arc->ReadEntryData(*e, arcBytes, &err)) continue;
+            if (arcBytes.size() > kMaxBsiBytes) continue;
+            if (TryDecodeBsiFromAnyOffset(arcBytes, tex)) break;
+        }
+    }
+    return tex;
+}
+
+static void PumpTextureStreaming(size_t budget) {
+    auto& queue = TextureStreamQueue();
+    auto& queued = TextureStreamQueuedSet();
+    auto& cache = BsiTextureCache();
+    while (budget-- > 0 && !queue.empty()) {
+        std::string stem = queue.front();
+        queue.pop_front();
+        queued.erase(stem);
+        if (cache.find(stem) != cache.end()) continue;
+        BsiPreviewTexture tex = LoadTextureByStemSync(stem);
+        if (cache.size() >= kMaxTextureCacheEntries) cache.clear();
+        cache.insert({ stem, std::move(tex) });
+    }
+}
+
+static const BsiPreviewTexture* TryGetTextureByStem(const std::string& stemIn, bool* outPending = nullptr) {
     std::string stem = NormalizeTextureStem(stemIn);
+    if (outPending) *outPending = false;
     if (stem.empty()) return nullptr;
+
     auto& cache = BsiTextureCache();
     auto it = cache.find(stem);
-    if (it == cache.end()) {
-        BsiPreviewTexture tex{};
-        std::vector<uint8_t> bytes;
-
-        std::ifstream tf("batspire/bsi_extracted/" + stem + ".BSI", std::ios::binary);
-        if (tf) {
-            tf.seekg(0, std::ios::end);
-            size_t n = (size_t)tf.tellg();
-            tf.seekg(0, std::ios::beg);
-            if (n > 0 && n <= kMaxBsiBytes) {
-                bytes.resize(n);
-                tf.read(reinterpret_cast<char*>(bytes.data()), (std::streamsize)n);
-                if (tf.good() || tf.eof()) TryDecodeBsiFromAnyOffset(bytes, tex);
-            }
-        }
-
-        if (tex.indices.empty()) {
-            const std::string name = stem + ".BSI";
-            for (const auto* arc : TextureSourceArchives()) {
-                if (!arc) continue;
-                const auto* e = arc->FindEntryCaseInsensitive(name);
-                if (!e) continue;
-                std::wstring err;
-                std::vector<uint8_t> arcBytes;
-                if (!arc->ReadEntryData(*e, arcBytes, &err)) continue;
-                if (arcBytes.size() > kMaxBsiBytes) continue;
-                if (TryDecodeBsiFromAnyOffset(arcBytes, tex)) break;
-            }
-        }
-
-        if (cache.size() >= kMaxTextureCacheEntries) cache.clear();
-        it = cache.insert({ stem, std::move(tex) }).first;
+    if (it != cache.end()) {
+        if (it->second.indices.empty()) return nullptr;
+        return &it->second;
     }
-    if (it->second.indices.empty()) return nullptr;
-    return &it->second;
+
+    auto& queued = TextureStreamQueuedSet();
+    if (queued.insert(stem).second) {
+        TextureStreamQueue().push_back(stem);
+    }
+    if (outPending) *outPending = true;
+    return nullptr;
 }
 
 static const BsiPreviewTexture* TryGetTextureForFace(const std::array<uint8_t, 6>& tag, const std::string& stemHint) {
@@ -466,22 +504,28 @@ static const BsiPreviewTexture* TryGetTextureForFace(const std::array<uint8_t, 6
 
     const bool zeroTag = (tagHex == "000000000000");
 
+    bool deferred = false;
+
     if (!zeroTag) {
         const auto& bound = BoundTagToStem();
         auto bt = bound.find(tagHex);
         if (bt != bound.end()) {
-            if (const auto* t = TryGetTextureByStem(bt->second)) {
+            bool pending = false;
+            if (const auto* t = TryGetTextureByStem(bt->second, &pending)) {
                 resolveCache[resolveKey] = bt->second;
                 return t;
             }
+            deferred = deferred || pending;
         }
     }
 
     if (!stemHint.empty()) {
-        if (const auto* t = TryGetTextureByStem(stemHint)) {
+        bool pending = false;
+        if (const auto* t = TryGetTextureByStem(stemHint, &pending)) {
             resolveCache[resolveKey] = stemHint;
             return t;
         }
+        deferred = deferred || pending;
     }
 
     if (!zeroTag) {
@@ -490,10 +534,12 @@ static const BsiPreviewTexture* TryGetTextureForFace(const std::array<uint8_t, 6
         if (ft != families.end()) {
             size_t tried = 0;
             for (const auto& stem : ft->second) {
-                if (const auto* t = TryGetTextureByStem(stem)) {
+                bool pending = false;
+                if (const auto* t = TryGetTextureByStem(stem, &pending)) {
                     resolveCache[resolveKey] = stem;
                     return t;
                 }
+                deferred = deferred || pending;
                 if (++tried >= 8) break;
             }
         }
@@ -505,16 +551,18 @@ static const BsiPreviewTexture* TryGetTextureForFace(const std::array<uint8_t, 6
         if (fi != inv.end()) {
             size_t tried = 0;
             for (const auto& stem : fi->second) {
-                if (const auto* t = TryGetTextureByStem(stem)) {
+                bool pending = false;
+                if (const auto* t = TryGetTextureByStem(stem, &pending)) {
                     resolveCache[resolveKey] = stem;
                     return t;
                 }
+                deferred = deferred || pending;
                 if (++tried >= 8) break;
             }
         }
     }
 
-    if (!zeroTag) resolveCache[resolveKey] = kMissResolveStem;
+    if (!zeroTag && !deferred) resolveCache[resolveKey] = kMissResolveStem;
     return nullptr;
 }
 
@@ -1152,6 +1200,10 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         return 0;
     case WM_TIMER:
         if (s) {
+            const size_t pendingBefore = TextureStreamQueue().size();
+            PumpTextureStreaming(2);
+            const bool streamed = TextureStreamQueue().size() < pendingBefore;
+
             ULONGLONG nowMs = GetTickCount64();
             ULONGLONG dtMsU = (s->lastTickMs > 0 && nowMs >= s->lastTickMs) ? (nowMs - s->lastTickMs) : 16;
             s->lastTickMs = nowMs;
@@ -1167,7 +1219,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             if (s->keys['D']) { s->camX += fy * speed; s->camZ -= fx * speed; moved = true; }
             if (s->keys['Q']) { s->camY += speed; moved = true; }
             if (s->keys['E']) { s->camY -= speed; moved = true; }
-            if (moved) InvalidateRect(hwnd, nullptr, FALSE);
+            if (moved || streamed) InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
     case WM_ERASEBKGND:
