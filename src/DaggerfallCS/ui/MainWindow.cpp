@@ -264,6 +264,101 @@ static std::vector<std::vector<std::wstring>> ParseTabLines(const std::wstring& 
     return rows;
 }
 
+
+static bool IsMagicTxtBsaEntryName(const std::wstring& entryName) {
+    size_t slash = entryName.find_last_of(L"/\\");
+    std::wstring bn = (slash == std::wstring::npos) ? entryName : entryName.substr(slash + 1);
+    bn = ToLowerWs(bn);
+    return bn == L"mg0_gen.txt" || bn == L"magic.txt" || bn == L"mg2_spc.txt";
+}
+
+struct MagicBundleRow {
+    std::wstring source;
+    std::wstring name;
+    std::wstring id;
+    std::wstring item;
+    std::wstring spell;
+    std::wstring app;
+    std::wstring adv;
+    std::wstring uses;
+    std::wstring level;
+    std::wstring cls;
+};
+
+static std::vector<int> ParseCommaInts(const std::wstring& raw) {
+    std::vector<int> vals;
+    size_t pos = 0;
+    while (pos <= raw.size()) {
+        size_t end = raw.find(L',', pos);
+        std::wstring tok = (end == std::wstring::npos) ? raw.substr(pos) : raw.substr(pos, end - pos);
+        tok = TrimWs(tok);
+        if (!tok.empty()) vals.push_back(_wtoi(tok.c_str()));
+        if (end == std::wstring::npos) break;
+        pos = end + 1;
+    }
+    return vals;
+}
+
+static std::wstring CompactIntListSummary(const std::wstring& label, const std::wstring& raw) {
+    const auto vals = ParseCommaInts(raw);
+    size_t used = 0;
+    for (int v : vals) if (v >= 0) used++;
+    if (vals.empty()) return raw;
+    return raw + L"  [" + label + L" refs=" + std::to_wstring(used) + L"/" + std::to_wstring(vals.size()) + L"]";
+}
+
+static std::vector<MagicBundleRow> ParseMagicBundleRows(const std::wstring& text, const std::wstring& sourceName) {
+    std::vector<MagicBundleRow> out;
+    MagicBundleRow cur{};
+    cur.source = sourceName;
+
+    auto flush = [&]() {
+        if (!TrimWs(cur.name).empty() || !TrimWs(cur.id).empty() || !TrimWs(cur.level).empty() ||
+            !TrimWs(cur.spell).empty() || !TrimWs(cur.app).empty()) {
+            out.push_back(cur);
+        }
+        cur = MagicBundleRow{};
+        cur.source = sourceName;
+    };
+
+    size_t start = 0;
+    while (start <= text.size()) {
+        size_t end = text.find(L'\n', start);
+        std::wstring line = (end == std::wstring::npos) ? text.substr(start) : text.substr(start, end - start);
+        if (!line.empty() && line.back() == L'\r') line.pop_back();
+
+        std::wstring trimmed = TrimWs(line);
+        if (trimmed.empty()) {
+            flush();
+            if (end == std::wstring::npos) break;
+            start = end + 1;
+            continue;
+        }
+
+        size_t sep = line.find(L'\t');
+        if (sep == std::wstring::npos) sep = line.find(L':');
+        std::wstring key = (sep == std::wstring::npos) ? TrimWs(line) : TrimWs(line.substr(0, sep));
+        std::wstring val = (sep == std::wstring::npos) ? L"" : TrimWs(line.substr(sep + 1));
+
+        std::wstring k = ToLowerWs(key);
+        if (k == L"name") cur.name = val;
+        else if (k == L"id#" || k == L"id") cur.id = val;
+        else if (k == L"item") cur.item = val;
+        else if (k == L"spell") cur.spell = val;
+        else if (k == L"app") cur.app = val;
+        else if (k == L"adv") cur.adv = val;
+        else if (k == L"uses") cur.uses = val;
+        else if (k == L"level") cur.level = val;
+        else if (k == L"class") cur.cls = val;
+
+        if (end == std::wstring::npos) break;
+        start = end + 1;
+    }
+
+    flush();
+    return out;
+}
+
 static std::wstring BaseNameOnly(const std::wstring& name) {
     size_t slash = name.find_last_of(L"/\\");
     std::wstring leaf = (slash == std::wstring::npos) ? name : name.substr(slash + 1);
@@ -458,9 +553,12 @@ static std::wstring ClassifyTxtBsaEntryCategory(const std::string& entryNameUtf8
     if (std::regex_match(name, reDialogue)) return L"Dialogue Bundles";
     if (std::regex_match(name, reBook) || name == L"book0000.txt") return L"Books";
 
-    if (name == L"iteml2.txt" || name == L"siteml2.txt" || name == L"magic.txt" ||
-        name == L"mg0_gen.txt" || name == L"mg2_spc.txt" || name == L"sigils.txt") {
-        return L"Item/Magic/Sigil Tables";
+    if (name == L"mg0_gen.txt" || name == L"magic.txt" || name == L"mg2_spc.txt") {
+        return L"Magic";
+    }
+
+    if (name == L"iteml2.txt" || name == L"siteml2.txt" || name == L"sigils.txt") {
+        return L"Item/Sigil Tables";
     }
 
     if (std::regex_match(name, reAmtbl) || std::regex_match(name, reLShard)) return L"Auxiliary Tables/Lists";
@@ -909,7 +1007,8 @@ void MainWindow::StartTreeBuild() {
             const std::vector<std::wstring> catOrder = {
                 L"Dialogue Bundles",
                 L"Books",
-                L"Item/Magic/Sigil Tables",
+                L"Magic",
+                L"Item/Sigil Tables",
                 L"Auxiliary Tables/Lists",
                 L"Bug Notes",
                 L"Logs/Scratch",
@@ -1599,13 +1698,56 @@ void MainWindow::OnTreeSelChanged() {
         std::wstring preview;
         bool renderedTable = false;
         if (IsLikelyUtf8Printable(bytes)) {
+            std::wstring nameLow = ToLowerWs(winutil::WidenUtf8(e.name));
             std::string text(bytes.begin(), bytes.end());
-            if (text.size() > 131072) text.resize(131072);
+            if (!IsMagicTxtBsaEntryName(nameLow) && text.size() > 131072) text.resize(131072);
             preview = winutil::WidenUtf8(text);
 
-            std::wstring nameLow = ToLowerWs(winutil::WidenUtf8(e.name));
+            if (IsMagicTxtBsaEntryName(nameLow)) {
+                const std::vector<std::wstring> headers = {
+                    L"Name", L"Spell Info", L"Level", L"APP Info", L"ID", L"Item", L"Uses", L"Adv", L"Class", L"Source"
+                };
+                auto rows = ParseMagicBundleRows(preview, BaseNameOnly(nameLow));
+                if (!rows.empty()) {
+                    SetupListColumns_BsaTable(headers);
+                    m_bsaDialogueKind = BsaDialogueKind::Table;
+                    m_bsaDialogueHeaders = headers;
+                    m_bsaDialogueRows.clear();
+                    m_bsaDialogueTitle = winutil::WidenUtf8(e.name);
+                    ListView_DeleteAllItems(m_list);
+
+                    for (size_t ri = 0; ri < rows.size(); ++ri) {
+                        const auto& r = rows[ri];
+                        std::vector<std::wstring> out = {
+                            r.name,
+                            CompactIntListSummary(L"spell", r.spell),
+                            r.level,
+                            CompactIntListSummary(L"app", r.app),
+                            r.id,
+                            r.item,
+                            r.uses,
+                            r.adv,
+                            r.cls,
+                            r.source
+                        };
+                        m_bsaDialogueRows.push_back(out);
+
+                        LVITEMW it{};
+                        it.mask = LVIF_TEXT;
+                        it.iItem = (int)ri;
+                        it.pszText = const_cast<wchar_t*>(out[0].c_str());
+                        ListView_InsertItem(m_list, &it);
+                        for (int ci = 1; ci < (int)out.size(); ++ci) {
+                            ListView_SetItemText(m_list, (int)ri, ci, const_cast<wchar_t*>(out[ci].c_str()));
+                        }
+                    }
+
+                    renderedTable = !m_bsaDialogueRows.empty();
+                }
+            }
+
             bool tableLikeExt = EndsWithWs(nameLow, L".xls") || EndsWithWs(nameLow, L".txt") || EndsWithWs(nameLow, L".csv");
-            if (tableLikeExt && preview.find(L'	') != std::wstring::npos) {
+            if (!renderedTable && tableLikeExt && preview.find(L'\t') != std::wstring::npos) {
                 auto rows = ParseTabLines(preview);
                 if (rows.size() >= 2) {
                     size_t maxCols = 0;
