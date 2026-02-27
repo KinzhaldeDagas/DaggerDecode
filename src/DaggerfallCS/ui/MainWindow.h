@@ -45,6 +45,12 @@ private:
     enum class ViewMode { TextSubrecords, QuestData, QuestStages, QuestText, BsaEntry, None };
     enum class BsaDialogueKind { None, Script, Routing, Table };
 
+    struct FlcSpeakTarget {
+        std::wstring code;
+        std::wstring lineText;
+        bool replySide{ false };
+    };
+
     struct TreePayload {
         enum class Kind { TextRecord, QuestsRoot, Quest, QuestStages, QuestText, BsaRoot, BsaArchive, BsaEntry };
         Kind kind{ Kind::TextRecord };
@@ -171,6 +177,9 @@ private:
     void SetupListColumns_QuestText();
 
     void ShowBsaDialogueRowPreview(int row);
+    void OnBsaDialogueListContextMenu(LPARAM lParam);
+    bool BuildFlcSpeakTargetFromListClick(int row, int subItem, FlcSpeakTarget& out) const;
+    void CmdSpeakBsaDialogueLine(const FlcSpeakTarget& target);
 
     void PopulateQuestStages(size_t questIdx);
     void PopulateQuestText(size_t questIdx);

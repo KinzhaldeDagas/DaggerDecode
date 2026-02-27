@@ -5,6 +5,8 @@
 #include "../export/CsvWriter.h"
 #include "../arena2/QuestOpcodeDisasm.h"
 #include "../battlespire/BattlespireFormats.h"
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")
 
 namespace ui {
 
@@ -25,6 +27,36 @@ static std::wstring ToLowerCopy(std::wstring s) {
     for (auto& c : s) c = (wchar_t)towlower(c);
     return s;
 }
+
+static constexpr UINT IDM_BSA_DIALOGUE_SPEAK = 42001;
+
+static bool IsAllDigitsWs(const std::wstring& s) {
+    if (s.empty()) return false;
+    for (wchar_t c : s) { if (c < L'0' || c > L'9') return false; }
+    return true;
+}
+
+static std::wstring MakeFlcSpeakFileBase(std::wstring code) {
+    auto issp = [](wchar_t c) { return c == L' ' || c == L'\t' || c == L'\r' || c == L'\n'; };
+    while (!code.empty() && issp(code.front())) code.erase(code.begin());
+    while (!code.empty() && issp(code.back())) code.pop_back();
+    for (auto& c : code) c = (wchar_t)towlower(c);
+    if (code.size() < 3) return L"";
+
+    std::wstring prefix = code.substr(0, 2);
+    std::wstring tail = code.substr(2);
+    if (!IsAllDigitsWs(tail)) return L"";
+
+    int n = _wtoi(tail.c_str());
+    if (n < 0) return L"";
+
+    for (auto& c : prefix) c = (wchar_t)towupper(c);
+
+    wchar_t num[16]{};
+    swprintf_s(num, L"%02d", n % 100);
+    return prefix + num;
+}
+
 
 static std::wstring TopicGroupForLabel(const std::wstring& label) {
     std::wstring s = ToLowerCopy(label);
@@ -557,6 +589,7 @@ void MainWindow::OnCommand(WORD id) {
     case IDM_EXPORT_QUESTS: CmdExportQuests(); break;
     case IDM_EXPORT_QUEST_STAGES: CmdExportQuestStages(); break;
     case IDM_EXPORT_TES4_QD: CmdExportTes4QuestDialogue(); break;
+    case IDM_BSA_DIALOGUE_SPEAK: break;
     case IDM_HELP_ABOUT:
         MessageBoxW(m_hwnd, L"Daggerfall-CS MVP\n\nLoads TEXT.RSC and Battlespire BSA resources and exports CSV.", L"About", MB_OK | MB_ICONINFORMATION);
         break;
@@ -687,6 +720,43 @@ void MainWindow::StartTreeBuild() {
                 L"Logs/Scratch",
                 L"Other TXT"
             };
+
+            const bool isFlcBsa = (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"FLC.BSA") == 0);
+            if (isFlcBsa) {
+                std::vector<size_t> dialogueFlc;
+                std::vector<size_t> otherFlc;
+                for (size_t ei = 0; ei < a.entries.size(); ++ei) {
+                    std::wstring bn = BaseNameOnly(winutil::WidenUtf8(a.entries[ei].name));
+                    if (std::regex_match(bn, std::wregex(LR"(^[a-z]{2}\d{2}\.(voc|wav)$)"))) dialogueFlc.push_back(ei);
+                    else otherFlc.push_back(ei);
+                }
+
+                auto byName = [&](std::vector<size_t>& v) {
+                    std::stable_sort(v.begin(), v.end(), [&](size_t lhs, size_t rhs) {
+                        std::wstring ln = BaseNameOnly(winutil::WidenUtf8(a.entries[lhs].name));
+                        std::wstring rn = BaseNameOnly(winutil::WidenUtf8(a.entries[rhs].name));
+                        return ln < rn;
+                    });
+                };
+                byName(dialogueFlc);
+                byName(otherFlc);
+
+                auto insCat = [&](const std::wstring& label, const std::vector<size_t>& items) {
+                    if (items.empty()) return;
+                    std::wstring cLabel = label + L" (" + std::to_wstring(items.size()) + L")";
+                    TVINSERTSTRUCTW cins{};
+                    cins.hParent = ah;
+                    cins.hInsertAfter = TVI_LAST;
+                    cins.item.mask = TVIF_TEXT;
+                    cins.item.pszText = const_cast<wchar_t*>(cLabel.c_str());
+                    HTREEITEM ch = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&cins);
+                    for (size_t ei : items) insertEntryNode(ch, ei);
+                };
+
+                insCat(L"Dialogue Voice Clips", dialogueFlc);
+                insCat(L"Other FLC Audio", otherFlc);
+                continue;
+            }
 
             for (const auto& cat : catOrder) {
                 auto it = txtCategories.find(cat);
@@ -2498,6 +2568,152 @@ void MainWindow::SetupListColumns_BsaTable(const std::vector<std::wstring>& head
     m_viewMode = ViewMode::BsaEntry;
 }
 
+void MainWindow::OnBsaDialogueListContextMenu(LPARAM lParam) {
+    if (m_viewMode != ViewMode::BsaEntry || m_bsaDialogueKind != BsaDialogueKind::Script) return;
+
+    POINT pt{};
+    pt.x = GET_X_LPARAM(lParam);
+    pt.y = GET_Y_LPARAM(lParam);
+    if (pt.x == -1 && pt.y == -1) {
+        int row = ListView_GetNextItem(m_list, -1, LVNI_SELECTED);
+        if (row < 0) return;
+        RECT rc{};
+        if (!ListView_GetSubItemRect(m_list, row, 0, LVIR_BOUNDS, &rc)) return;
+        pt.x = rc.left + 8;
+        pt.y = rc.top + 8;
+        ClientToScreen(m_list, &pt);
+    }
+
+    POINT client = pt;
+    ScreenToClient(m_list, &client);
+
+    LVHITTESTINFO hit{};
+    hit.pt = client;
+    int row = ListView_SubItemHitTest(m_list, &hit);
+    if (row < 0 || hit.iSubItem < 0) return;
+
+    FlcSpeakTarget target{};
+    if (!BuildFlcSpeakTargetFromListClick(row, hit.iSubItem, target)) return;
+
+    HMENU h = CreatePopupMenu();
+    if (!h) return;
+
+    std::wstring label = L"Speak";
+    if (!target.code.empty()) label += L" (" + target.code + L")";
+    AppendMenuW(h, MF_STRING, IDM_BSA_DIALOGUE_SPEAK, label.c_str());
+
+    SetForegroundWindow(m_hwnd);
+    UINT cmd = TrackPopupMenu(h, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, m_hwnd, nullptr);
+    DestroyMenu(h);
+
+    if (cmd == IDM_BSA_DIALOGUE_SPEAK) {
+        CmdSpeakBsaDialogueLine(target);
+    }
+}
+
+bool MainWindow::BuildFlcSpeakTargetFromListClick(int row, int subItem, FlcSpeakTarget& out) const {
+    if (row < 0 || (size_t)row >= m_bsaDialogueRows.size()) return false;
+    if (subItem < 0 || subItem > 2) return false;
+
+    const auto& src = m_bsaDialogueRows[(size_t)row];
+
+    auto getCell = [&](size_t idx) -> std::wstring {
+        return idx < src.size() ? TrimWs(src[idx]) : L"";
+    };
+
+    const bool reply = (subItem == 2);
+    std::wstring code = reply ? getCell(2) : getCell(0);
+    std::wstring text = reply ? getCell(5) : getCell(1);
+
+    if (code.empty()) {
+        for (int i = row - 1; i >= 0; --i) {
+            const auto& prev = m_bsaDialogueRows[(size_t)i];
+            size_t idx = reply ? 2u : 0u;
+            if (idx < prev.size()) {
+                std::wstring c = TrimWs(prev[idx]);
+                if (!c.empty()) { code = std::move(c); break; }
+            }
+        }
+    }
+
+    if (code.empty() || _wcsicmp(code.c_str(), L"END") == 0) return false;
+    if (text.empty()) text = L"(line text unavailable)";
+
+    out.code = std::move(code);
+    out.lineText = std::move(text);
+    out.replySide = reply;
+    return true;
+}
+
+void MainWindow::CmdSpeakBsaDialogueLine(const FlcSpeakTarget& target) {
+    if (target.code.empty()) return;
+
+    std::wstring base = MakeFlcSpeakFileBase(target.code);
+    if (base.empty()) {
+        MessageBoxW(m_hwnd, (L"Could not map code to FLC speech file: " + target.code).c_str(), L"Speak", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    std::vector<std::wstring> candidateNames;
+    candidateNames.push_back(base + L".VOC");
+    candidateNames.push_back(base + L".WAV");
+
+    const battlespire::BsaArchive* flcBsa = nullptr;
+    for (const auto& a : m_bsaArchives) {
+        std::wstring n = ToLowerWs(a.sourcePath.filename().wstring());
+        if (n == L"flc.bsa") {
+            flcBsa = &a;
+            break;
+        }
+    }
+
+    if (!flcBsa) {
+        MessageBoxW(m_hwnd, L"FLC.BSA is not loaded under BSA Archives.", L"Speak", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    const battlespire::BsaEntry* found = nullptr;
+    for (const auto& cand : candidateNames) {
+        found = flcBsa->FindEntryCaseInsensitive(winutil::NarrowUtf8(cand));
+        if (found) break;
+    }
+
+    if (!found) {
+        std::wstring msg = L"No matching audio entry was found in FLC.BSA for code ";
+        msg += target.code;
+        msg += L".\r\nExpected stems: ";
+        msg += base;
+        msg += L"(.VOC/.WAV)";
+        MessageBoxW(m_hwnd, msg.c_str(), L"Speak", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    std::vector<uint8_t> bytes;
+    std::wstring err;
+    if (!flcBsa->ReadEntryData(*found, bytes, &err)) {
+        MessageBoxW(m_hwnd, (L"Failed to read audio entry: " + err).c_str(), L"Speak", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    auto tempDir = std::filesystem::temp_directory_path();
+    std::filesystem::path out = tempDir / (L"DaggerfallCS_" + base + L".wav");
+    std::ofstream f(out, std::ios::binary);
+    if (!f) {
+        MessageBoxW(m_hwnd, L"Failed to write temporary wave file.", L"Speak", MB_OK | MB_ICONERROR);
+        return;
+    }
+    f.write(reinterpret_cast<const char*>(bytes.data()), (std::streamsize)bytes.size());
+    f.close();
+
+    if (!PlaySoundW(out.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT)) {
+        MessageBoxW(m_hwnd, L"Unable to play audio (PlaySound failed).", L"Speak", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    std::wstring who = target.replySide ? L"Reply" : L"Say";
+    SetStatus(L"Speak " + who + L": " + target.code + L" -> " + winutil::WidenUtf8(found->name));
+}
+
 void MainWindow::ShowBsaDialogueRowPreview(int row) {
     if (row < 0 || (size_t)row >= m_bsaDialogueRows.size()) return;
 
@@ -3242,6 +3458,12 @@ LRESULT CALLBACK MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
     case WM_COMMAND:
         self->OnCommand(LOWORD(wParam));
         return 0;
+    case WM_CONTEXTMENU:
+        if ((HWND)wParam == self->m_list) {
+            self->OnBsaDialogueListContextMenu(lParam);
+            return 0;
+        }
+        break;
     case WM_NOTIFY: {
         auto* hdr = (LPNMHDR)lParam;
 
