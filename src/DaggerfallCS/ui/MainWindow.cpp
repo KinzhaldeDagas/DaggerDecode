@@ -719,12 +719,15 @@ struct LevelPreviewState {
     ULONGLONG lastFrameMs = 0;
     uint32_t fpsWindowFrames = 0;
     float fps = 0.0f;
+    int directXPixelStep = 1;
+    ULONGLONG pixelStepTuneMs = 0;
 };
 
 static constexpr float kLevelPreviewNearZ = 24.0f;
 static constexpr float kLevelPreviewFarZ = 200000.0f;
 static constexpr float kLevelPreviewDrawDistanceStep = 2000.0f;
 static constexpr float kLevelPreviewDrawDistanceMin = 2000.0f;
+static constexpr float kLevelPreviewTargetFps = 30.0f;
 
 static COLORREF ModulateColor(COLORREF c, float lightScale) {
     const float s = std::clamp(lightScale, 0.0f, 2.0f);
@@ -805,6 +808,16 @@ static std::vector<PreviewVertex> ClipPolygonAgainstZPlane(const std::vector<Pre
     return out;
 }
 
+static bool IsProjectedTriangleStable(const POINT& p0, const POINT& p1, const POINT& p2) {
+    const int64_t ax = int64_t(p1.x) - int64_t(p0.x);
+    const int64_t ay = int64_t(p1.y) - int64_t(p0.y);
+    const int64_t bx = int64_t(p2.x) - int64_t(p0.x);
+    const int64_t by = int64_t(p2.y) - int64_t(p0.y);
+    const int64_t area2 = ax * by - ay * bx;
+    return llabs(area2) >= 4;
+}
+
+
 static void DrawTextBottomRight(HDC hdc, RECT rc, const std::wstring& text, COLORREF color) {
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, color);
@@ -869,6 +882,29 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     auto& colorBuffer = s.backBuffer.color;
     auto& zBuffer = s.backBuffer.depth;
     int pixelStep = 1;
+    if (s.renderDirectX) {
+        int targetStep = 1;
+        if (s.scene->modelFaces.size() > 18000) targetStep = 2;
+        if (s.fps > 0.0f) {
+            if (s.fps < kLevelPreviewTargetFps - 10.0f) targetStep = 2;
+            else if (s.fps > kLevelPreviewTargetFps + 6.0f) targetStep = 1;
+        }
+
+        ULONGLONG nowMs = GetTickCount64();
+        if (s.pixelStepTuneMs == 0) s.pixelStepTuneMs = nowMs;
+        const ULONGLONG tuneDt = (nowMs >= s.pixelStepTuneMs) ? (nowMs - s.pixelStepTuneMs) : 0;
+        if (tuneDt >= 350) {
+            if (s.directXPixelStep < targetStep) s.directXPixelStep++;
+            else if (s.directXPixelStep > targetStep) s.directXPixelStep--;
+            s.pixelStepTuneMs = nowMs;
+        }
+        s.directXPixelStep = std::clamp(s.directXPixelStep, 1, 2);
+        pixelStep = s.directXPixelStep;
+    }
+
+    const float focal = (float)std::min(w, h) * 0.7f;
+    const float halfW = float(w) * 0.5f;
+    const float halfH = float(h) * 0.5f;
 
     auto toBgr32 = [](COLORREF c) -> uint32_t {
         return (uint32_t(GetRValue(c)) << 16) | (uint32_t(GetGValue(c)) << 8) | uint32_t(GetBValue(c));
@@ -894,16 +930,19 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         bool hasUvTexture{ false };
         float lightScale{ 1.0f };
         float avgDepth{};
+        size_t sourceIndex{};
         COLORREF color{};
     };
     std::vector<DrawFace> drawFaces;
     drawFaces.reserve(s.scene->modelFaces.size());
 
 
-    for (const auto& face : s.scene->modelFaces) {
+    for (size_t faceIndex = 0; faceIndex < s.scene->modelFaces.size(); ++faceIndex) {
+        const auto& face = s.scene->modelFaces[faceIndex];
         if (face.worldPoints.size() < 3) continue;
 
         DrawFace df{};
+        df.sourceIndex = faceIndex;
         df.color = face.color;
         df.textureTag = face.textureTag;
         df.textureStemHint = face.textureStemHint;
@@ -950,17 +989,20 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         bool projectedAny = false;
         for (const auto& pv : poly) {
             if (!std::isfinite(pv.x) || !std::isfinite(pv.y) || !std::isfinite(pv.z)) continue;
-            float focal = (float)std::min(w, h) * 0.7f;
             float sx = (pv.x / pv.z) * focal;
             float syProj = (pv.y / pv.z) * focal;
             if (!std::isfinite(sx) || !std::isfinite(syProj)) continue;
             POINT p{};
-            p.x = int(w * 0.5f + sx);
-            p.y = int(h * 0.5f - syProj);
+            p.x = int(halfW + sx);
+            p.y = int(halfH - syProj);
 
             float d = pv.z;
             depthSum += d;
             projectedAny = true;
+            if (!df.pts.empty()) {
+                const POINT& lp = df.pts.back();
+                if (lp.x == p.x && lp.y == p.y) continue;
+            }
             df.pts.push_back(p);
             df.depths.push_back(d);
             if (face.hasUvTexture) df.uvs.push_back({ pv.u, pv.v });
@@ -976,11 +1018,18 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         drawFaces.push_back(std::move(df));
     }
 
+    std::stable_sort(drawFaces.begin(), drawFaces.end(), [](const DrawFace& a, const DrawFace& b) {
+        const float dz = a.avgDepth - b.avgDepth;
+        if (fabsf(dz) > 0.01f) return dz < 0.0f;
+        return a.sourceIndex < b.sourceIndex;
+    });
+
     for (const auto& df : drawFaces) {
         const auto* tex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForFace(df.textureTag, df.textureStemHint) : nullptr;
         if (tex && df.pts.size() >= 3) {
             for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
                 const POINT p0 = df.pts[0], p1 = df.pts[ti], p2 = df.pts[ti + 1];
+                if (!IsProjectedTriangleStable(p0, p1, p2)) continue;
                 const PreviewUv t0 = df.uvs[0], t1 = df.uvs[ti], t2 = df.uvs[ti + 1];
                 const float z0 = df.depths[0], z1 = df.depths[ti], z2 = df.depths[ti + 1];
 
@@ -1027,14 +1076,15 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                         float w0 = float((p1.y - p2.y) * (x - p2.x) + (p2.x - p1.x) * (y - p2.y)) / den;
                         float w1 = float((p2.y - p0.y) * (x - p2.x) + (p0.x - p2.x) * (y - p2.y)) / den;
                         float w2 = 1.0f - w0 - w1;
-                        if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
+                        if (w0 < -0.0005f || w1 < -0.0005f || w2 < -0.0005f) continue;
 
                         float z = w0 * z0 + w1 * z1 + w2 * z2;
                         if (!std::isfinite(z) || z < 0.01f) continue;
 
                         size_t zidx = size_t(y) * size_t(w) + size_t(x);
                         if (zidx >= zBuffer.size()) continue;
-                        if (z >= zBuffer[zidx]) continue;
+                        const float zTest = z + float(df.sourceIndex & 255u) * 1.0e-4f;
+                        if (zTest >= zBuffer[zidx]) continue;
 
                         float iz = w0 * iz0 + w1 * iz1 + w2 * iz2;
                         if (!std::isfinite(iz) || fabsf(iz) < 1e-8f) continue;
@@ -1054,7 +1104,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                                 if (px > maxx || px >= w) break;
                                 size_t pidx = size_t(py) * size_t(w) + size_t(px);
                                 if (pidx >= zBuffer.size()) continue;
-                                zBuffer[pidx] = z;
+                                zBuffer[pidx] = zTest;
                                 colorBuffer[pidx] = sampled;
                             }
                         }
@@ -1065,6 +1115,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         else if (df.pts.size() >= 3 && df.depths.size() == df.pts.size()) {
             for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
                 const POINT p0 = df.pts[0], p1 = df.pts[ti], p2 = df.pts[ti + 1];
+                if (!IsProjectedTriangleStable(p0, p1, p2)) continue;
                 const float z0 = df.depths[0], z1 = df.depths[ti], z2 = df.depths[ti + 1];
 
                 LONG triMinX = std::min(std::min(p0.x, p1.x), p2.x);
@@ -1080,25 +1131,27 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
 
                 float den = float((p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y));
                 if (!std::isfinite(den) || fabsf(den) < 1e-5f) continue;
+                const float invDen = 1.0f / den;
+                const COLORREF litColor = s.renderDirectX ? ModulateColor(df.color, df.lightScale) : df.color;
+                const uint32_t lit = toBgr32(litColor);
 
                 const int triArea = (maxx - minx + 1) * (maxy - miny + 1);
                 if (triArea > (w * h * 3) / 4) continue;
                 for (int y = miny; y <= maxy; y += pixelStep) {
                     for (int x = minx; x <= maxx; x += pixelStep) {
-                        float w0 = float((p1.y - p2.y) * (x - p2.x) + (p2.x - p1.x) * (y - p2.y)) / den;
-                        float w1 = float((p2.y - p0.y) * (x - p2.x) + (p0.x - p2.x) * (y - p2.y)) / den;
+                        float w0 = float((p1.y - p2.y) * (x - p2.x) + (p2.x - p1.x) * (y - p2.y)) * invDen;
+                        float w1 = float((p2.y - p0.y) * (x - p2.x) + (p0.x - p2.x) * (y - p2.y)) * invDen;
                         float w2 = 1.0f - w0 - w1;
-                        if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
+                        if (w0 < -0.0005f || w1 < -0.0005f || w2 < -0.0005f) continue;
 
                         float z = w0 * z0 + w1 * z1 + w2 * z2;
                         if (!std::isfinite(z) || z < 0.01f) continue;
 
                         size_t zidx = size_t(y) * size_t(w) + size_t(x);
                         if (zidx >= zBuffer.size()) continue;
-                        if (z >= zBuffer[zidx]) continue;
+                        const float zTest = z + float(df.sourceIndex & 255u) * 1.0e-4f;
+                        if (zTest >= zBuffer[zidx]) continue;
 
-                        COLORREF flatColor = s.renderDirectX ? ModulateColor(df.color, df.lightScale) : df.color;
-                        uint32_t flat = toBgr32(flatColor);
                         for (int oy = 0; oy < pixelStep; ++oy) {
                             int py = y + oy;
                             if (py > maxy || py >= h) break;
@@ -1107,8 +1160,8 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                                 if (px > maxx || px >= w) break;
                                 size_t pidx = size_t(py) * size_t(w) + size_t(px);
                                 if (pidx >= zBuffer.size()) continue;
-                                zBuffer[pidx] = z;
-                                colorBuffer[pidx] = flat;
+                                zBuffer[pidx] = zTest;
+                                colorBuffer[pidx] = lit;
                             }
                         }
                     }
@@ -1202,6 +1255,8 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             else {
                 s->status = L"Loaded";
                 s->scene = std::move(scene);
+                s->directXPixelStep = 1;
+                s->pixelStepTuneMs = 0;
             }
             InvalidateRect(hwnd, nullptr, FALSE);
         }

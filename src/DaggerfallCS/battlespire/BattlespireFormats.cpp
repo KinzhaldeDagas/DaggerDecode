@@ -392,25 +392,43 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
         std::vector<std::string> modelNames;
     };
 
+    auto readChunkString = [&](const uint8_t* data, uint32_t len) -> std::string {
+        if (!data || len == 0) return {};
+        size_t n = 0;
+        while (n < len && data[n] != '\0') ++n;
+        if (n == 0) return {};
+        return std::string(reinterpret_cast<const char*>(data), reinterpret_cast<const char*>(data) + n);
+    };
+
     auto parseLfil = [&](const uint8_t* payload, uint32_t len, ObjTemplateList& outList) {
         if (len < 260) return;
         size_t count = len / 260;
         outList.modelNames.reserve(outList.modelNames.size() + count);
         for (size_t i = 0; i < count; ++i) {
-            const char* src = reinterpret_cast<const char*>(payload + i * 260);
-            size_t n = 0;
-            while (n < 260 && src[n] != '\0') ++n;
-            if (n == 0) continue;
-            std::string model = normalizeModelName(std::string(src, src + n));
+            const uint8_t* src = payload + i * 260;
+            std::string model = normalizeModelName(readChunkString(src, 260));
             if (!model.empty()) outList.modelNames.push_back(std::move(model));
         }
     };
 
-    auto parseObjd = [&](const uint8_t* payload, uint32_t len, const ObjTemplateList& templates) {
+    auto parseObjd = [&](const uint8_t* payload, uint32_t len, const ObjTemplateList* templates) {
         Bs6ModelInstance inst{};
-        bool hasIdfi = false;
+        std::string dirName;
+        std::string fileName;
         bool idfiOutOfRange = false;
-        uint32_t idfiValue = 0;
+        int32_t idfiValue = -1;
+
+        auto resolveFromTemplates = [&](int32_t idx) -> std::string {
+            if (!templates || templates->modelNames.empty()) return {};
+            if (idx >= 0 && size_t(idx) < templates->modelNames.size()) {
+                return normalizeModelName(templates->modelNames[size_t(idx)]);
+            }
+            // Some scene payloads appear to use 1-based template indices.
+            if (idx > 0 && size_t(idx - 1) < templates->modelNames.size()) {
+                return normalizeModelName(templates->modelNames[size_t(idx - 1)]);
+            }
+            return {};
+        };
 
         size_t p = 0;
         while (p + 8 <= len) {
@@ -422,13 +440,20 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
             const uint8_t* c = payload + p + 8;
 
             if (name == "IDFI" && clen >= 4) {
-                idfiValue = ReadU32(c);
-                if (idfiValue < templates.modelNames.size()) {
-                    inst.modelName = normalizeModelName(templates.modelNames[idfiValue]);
-                    hasIdfi = !inst.modelName.empty();
-                } else {
+                idfiValue = readI32(c);
+                std::string resolved = resolveFromTemplates(idfiValue);
+                if (!resolved.empty()) {
+                    inst.modelName = std::move(resolved);
+                }
+                else {
                     idfiOutOfRange = true;
                 }
+            }
+            else if (name == "FILN" || name == "NAME") {
+                fileName = readChunkString(c, clen);
+            }
+            else if (name == "DIRN") {
+                dirName = readChunkString(c, clen);
             }
             else if (name == "POSI" && clen >= 12) {
                 inst.position = { readI32(c + 0), readI32(c + 4), readI32(c + 8) };
@@ -444,13 +469,19 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
             p = next;
         }
 
-        if (hasIdfi && !inst.modelName.empty()) {
+        if (!fileName.empty()) {
+            std::string joined = fileName;
+            if (!dirName.empty()) joined = dirName + "/" + fileName;
+            inst.modelName = normalizeModelName(joined);
+        }
+
+        if (!inst.modelName.empty()) {
             out.models.push_back(std::move(inst));
-        } else if (idfiOutOfRange) {
+        }
+        else if (idfiOutOfRange && idfiValue >= 0) {
             out.unresolvedModelNames.push_back("idfi:" + std::to_string(idfiValue));
         }
     };
-
     int64_t ambientSum = 0;
     int64_t brightnessSum = 0;
 
@@ -467,15 +498,15 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
     static constexpr size_t kMaxWalkDepth = 64;
     size_t parsedChunkCount = 0;
 
-    std::function<bool(size_t, size_t, ObjTemplateList*, size_t)> walk = [&](size_t start, size_t end, ObjTemplateList* inheritedTemplates, size_t depth) -> bool {
+    std::function<bool(size_t, size_t, ObjTemplateList*, size_t, bool)> walk = [&](size_t start, size_t end, ObjTemplateList* inheritedTemplates, size_t depth, bool inObjd) -> bool {
         if (depth > kMaxWalkDepth) {
             if (err) *err = L"BS6 scene parse exceeded maximum nested chunk depth.";
             return false;
         }
 
         size_t p = start;
-        ObjTemplateList localTemplates;
-        ObjTemplateList* activeTemplates = inheritedTemplates;
+        ObjTemplateList localTemplates = inheritedTemplates ? *inheritedTemplates : ObjTemplateList{};
+        ObjTemplateList* activeTemplates = &localTemplates;
 
         while (p + 8 <= end) {
             if (++parsedChunkCount > kMaxChunkCount) {
@@ -498,7 +529,7 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
 
             const uint8_t* payload = bytes.data() + p + 8;
             if (name == "POSI" && len >= 12) {
-                out.markers.push_back({ readI32(payload + 0), readI32(payload + 4), readI32(payload + 8) });
+                if (!inObjd) out.markers.push_back({ readI32(payload + 0), readI32(payload + 4), readI32(payload + 8) });
             }
             else if (name == "BBOX" && len >= 24) {
                 Bs6SceneBox b{};
@@ -546,14 +577,15 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
                 parseLfil(payload, len, localTemplates);
                 activeTemplates = &localTemplates;
             }
-            else if (name == "OBJD" && activeTemplates) {
-                parseObjd(payload, len, *activeTemplates);
+            else if (name == "OBJD") {
+                parseObjd(payload, len, activeTemplates);
             }
 
             if (groupNames.find(name) != groupNames.end()) {
                 ObjTemplateList* childTemplates = activeTemplates;
                 if (name == "OBJS") childTemplates = &localTemplates;
-                if (!walk(p + 8, next, childTemplates, depth + 1)) return false;
+                const bool childInObjd = inObjd || (name == "OBJD");
+                if (!walk(p + 8, next, childTemplates, depth + 1, childInObjd)) return false;
             }
 
             p = next;
@@ -567,7 +599,7 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
         return true;
     };
 
-    if (!walk(0, bytes.size(), nullptr, 0)) return false;
+    if (!walk(0, bytes.size(), nullptr, 0, false)) return false;
 
     if (!out.unresolvedModelNames.empty()) {
         std::sort(out.unresolvedModelNames.begin(), out.unresolvedModelNames.end());
