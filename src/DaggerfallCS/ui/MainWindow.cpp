@@ -221,6 +221,29 @@ static std::vector<std::vector<std::wstring>> ParseTabLines(const std::wstring& 
     return rows;
 }
 
+static bool IsDialogueScriptHeaderCell(const std::wstring& cell) {
+    std::wstring c = ToLowerWs(TrimWs(cell));
+    return c == L"saycode" || c == L"npc say" || c == L"replycode" || c == L"pc reply" || c == L"do this action" || c == L"goto";
+}
+
+static bool IsRoutingHeaderCell(const std::wstring& cell) {
+    std::wstring c = ToLowerWs(TrimWs(cell));
+    return c == L"talkgroup" || c == L"notes";
+}
+
+static bool IsRoutingKeywordCell(const std::wstring& cell) {
+    std::wstring c = ToLowerWs(TrimWs(cell));
+    return c == L"talkcheck" || c == L"talktable" || c == L"random" || c == L"first" || c == L"second" || c == L"third" || c.find(L"fourth") != std::wstring::npos;
+}
+
+static size_t CountNonEmptyCells(const std::vector<std::wstring>& row) {
+    size_t n = 0;
+    for (const auto& c : row) {
+        if (!TrimWs(c).empty()) n++;
+    }
+    return n;
+}
+
 static std::wstring DeriveBookTitle(arena2::TextRecord& rec, const std::vector<uint8_t>& fileBytes, std::wstring_view indexLabel) {
     std::wstring label(indexLabel);
     std::wstring labelLow = ToLowerCopy(label);
@@ -1067,6 +1090,11 @@ void MainWindow::OnTreeSelChanged() {
     auto* p = GetSelectedPayload();
     if (!p) return;
 
+    m_bsaDialogueKind = BsaDialogueKind::None;
+    m_bsaDialogueRows.clear();
+    m_bsaDialogueHeaders.clear();
+    m_bsaDialogueTitle.clear();
+
     if (p->kind == TreePayload::Kind::TextRecord) {
         ShowQuestView(false);
         SetupListColumns_TextSubrecords();
@@ -1115,47 +1143,95 @@ void MainWindow::OnTreeSelChanged() {
                     size_t maxCols = 0;
                     for (const auto& r : rows) maxCols = std::max(maxCols, r.size());
                     if (maxCols >= 3) {
-                        // Try to find explicit dialogue headers (Saycode, NPC SAY, Replycode...), otherwise use densest row.
                         size_t headerRow = 0;
                         size_t bestScore = 0;
+                        bool dialogueScript = false;
+                        bool dialogueRouting = false;
+
                         for (size_t ri = 0; ri < rows.size(); ++ri) {
-                            size_t nonEmpty = 0;
-                            bool hasSaycode = false;
+                            size_t nonEmpty = CountNonEmptyCells(rows[ri]);
+                            size_t scriptHits = 0;
+                            size_t routingHits = 0;
                             for (const auto& c : rows[ri]) {
-                                if (!c.empty()) nonEmpty++;
-                                if (ToLowerWs(c) == L"saycode") hasSaycode = true;
+                                if (IsDialogueScriptHeaderCell(c)) scriptHits++;
+                                if (IsRoutingHeaderCell(c)) routingHits++;
                             }
-                            size_t score = nonEmpty + (hasSaycode ? 100 : 0);
+
+                            size_t score = nonEmpty + scriptHits * 100 + routingHits * 70;
                             if (score > bestScore) { bestScore = score; headerRow = ri; }
+
+                            if (scriptHits >= 2) dialogueScript = true;
+                            if (routingHits >= 1 || (routingHits == 0 && nonEmpty >= 2)) {
+                                for (const auto& c : rows[ri]) {
+                                    if (IsRoutingKeywordCell(c)) {
+                                        dialogueRouting = true;
+                                        break;
+                                    }
+                                }
+                            }
                         }
 
-                        while (ListView_DeleteColumn(m_list, 0)) {}
-                        LVCOLUMNW c{};
-                        c.mask = LVCF_TEXT | LVCF_WIDTH;
+                        std::vector<std::wstring> headers;
+                        headers.reserve(maxCols);
                         for (size_t ci = 0; ci < maxCols; ++ci) {
                             std::wstring hn = (ci < rows[headerRow].size() && !rows[headerRow][ci].empty()) ? rows[headerRow][ci] : (L"Col" + std::to_wstring(ci + 1));
-                            c.cx = (ci == 0) ? 120 : 220;
-                            c.pszText = const_cast<wchar_t*>(hn.c_str());
-                            ListView_InsertColumn(m_list, (int)ci, &c);
+                            headers.push_back(std::move(hn));
+                        }
+
+                        if (dialogueScript) {
+                            SetupListColumns_BsaDialogueScript();
+                            m_bsaDialogueKind = BsaDialogueKind::Script;
+                        } else if (dialogueRouting) {
+                            SetupListColumns_BsaDialogueRouting();
+                            m_bsaDialogueKind = BsaDialogueKind::Routing;
+                        } else {
+                            SetupListColumns_BsaTable(headers);
+                            m_bsaDialogueKind = BsaDialogueKind::Table;
                         }
 
                         ListView_DeleteAllItems(m_list);
+                        m_bsaDialogueHeaders = headers;
+                        m_bsaDialogueRows.clear();
+                        m_bsaDialogueTitle = winutil::WidenUtf8(e.name);
+
                         int outRow = 0;
                         for (size_t ri = headerRow + 1; ri < rows.size(); ++ri) {
-                            bool any = false;
-                            for (const auto& cell : rows[ri]) if (!cell.empty()) { any = true; break; }
+                            bool any = CountNonEmptyCells(rows[ri]) > 0;
                             if (!any) continue;
 
+                            m_bsaDialogueRows.push_back(rows[ri]);
+                            const size_t srcIdx = m_bsaDialogueRows.size() - 1;
+
                             LVITEMW it{};
-                            it.mask = LVIF_TEXT;
+                            it.mask = LVIF_TEXT | LVIF_PARAM;
                             it.iItem = outRow;
+                            it.lParam = (LPARAM)srcIdx;
+
                             std::wstring first = (rows[ri].empty() ? L"" : rows[ri][0]);
-                            it.pszText = const_cast<wchar_t*>(first.c_str());
-                            ListView_InsertItem(m_list, &it);
-                            for (size_t ci = 1; ci < maxCols; ++ci) {
-                                std::wstring cell = (ci < rows[ri].size()) ? rows[ri][ci] : L"";
-                                ListView_SetItemText(m_list, outRow, (int)ci, const_cast<wchar_t*>(cell.c_str()));
+                            std::wstring second = (rows[ri].size() > 1 ? rows[ri][1] : L"");
+                            std::wstring third = (rows[ri].size() > 2 ? rows[ri][2] : L"");
+
+                            if (m_bsaDialogueKind == BsaDialogueKind::Script) {
+                                it.pszText = const_cast<wchar_t*>(first.c_str());
+                                ListView_InsertItem(m_list, &it);
+                                ListView_SetItemText(m_list, outRow, 1, const_cast<wchar_t*>(second.c_str()));
+                                ListView_SetItemText(m_list, outRow, 2, const_cast<wchar_t*>(third.c_str()));
+                            } else if (m_bsaDialogueKind == BsaDialogueKind::Routing) {
+                                it.pszText = const_cast<wchar_t*>(first.c_str());
+                                ListView_InsertItem(m_list, &it);
+                                ListView_SetItemText(m_list, outRow, 1, const_cast<wchar_t*>(second.c_str()));
+                                std::wstring notes = (rows[ri].size() > 3 ? rows[ri][3] : L"");
+                                if (notes.empty()) notes = third;
+                                ListView_SetItemText(m_list, outRow, 2, const_cast<wchar_t*>(notes.c_str()));
+                            } else {
+                                it.pszText = const_cast<wchar_t*>(first.c_str());
+                                ListView_InsertItem(m_list, &it);
+                                for (size_t ci = 1; ci < maxCols; ++ci) {
+                                    std::wstring cell = (ci < rows[ri].size()) ? rows[ri][ci] : L"";
+                                    ListView_SetItemText(m_list, outRow, (int)ci, const_cast<wchar_t*>(cell.c_str()));
+                                }
                             }
+
                             outRow++;
                             if (outRow > 4000) break;
                         }
@@ -1187,7 +1263,11 @@ void MainWindow::OnTreeSelChanged() {
             addRow(4, L"Decoded Size: " + std::to_wstring(bytes.size()));
         }
 
-        SetWindowTextW(m_preview, preview.c_str());
+        if (renderedTable) {
+            ShowBsaDialogueRowPreview(0);
+        } else {
+            SetWindowTextW(m_preview, preview.c_str());
+        }
         m_viewMode = ViewMode::BsaEntry;
         return;
     }
@@ -2217,6 +2297,88 @@ void MainWindow::SetupListColumns_TextSubrecords() {
     m_viewMode = ViewMode::TextSubrecords;
 }
 
+void MainWindow::SetupListColumns_BsaDialogueScript() {
+    ListView_DeleteAllItems(m_list);
+    while (ListView_DeleteColumn(m_list, 0)) {}
+
+    LVCOLUMNW c{};
+    c.mask = LVCF_TEXT | LVCF_WIDTH;
+    c.cx = 120;
+    c.pszText = const_cast<wchar_t*>(L"Saycode");
+    ListView_InsertColumn(m_list, 0, &c);
+
+    c.cx = 560;
+    c.pszText = const_cast<wchar_t*>(L"NPC SAY");
+    ListView_InsertColumn(m_list, 1, &c);
+
+    c.cx = 160;
+    c.pszText = const_cast<wchar_t*>(L"Replycode");
+    ListView_InsertColumn(m_list, 2, &c);
+
+    m_viewMode = ViewMode::BsaEntry;
+}
+
+void MainWindow::SetupListColumns_BsaDialogueRouting() {
+    ListView_DeleteAllItems(m_list);
+    while (ListView_DeleteColumn(m_list, 0)) {}
+
+    LVCOLUMNW c{};
+    c.mask = LVCF_TEXT | LVCF_WIDTH;
+    c.cx = 160;
+    c.pszText = const_cast<wchar_t*>(L"Rule / Range");
+    ListView_InsertColumn(m_list, 0, &c);
+
+    c.cx = 220;
+    c.pszText = const_cast<wchar_t*>(L"TalkGroup / Target");
+    ListView_InsertColumn(m_list, 1, &c);
+
+    c.cx = 340;
+    c.pszText = const_cast<wchar_t*>(L"Notes");
+    ListView_InsertColumn(m_list, 2, &c);
+
+    m_viewMode = ViewMode::BsaEntry;
+}
+
+void MainWindow::SetupListColumns_BsaTable(const std::vector<std::wstring>& headers) {
+    ListView_DeleteAllItems(m_list);
+    while (ListView_DeleteColumn(m_list, 0)) {}
+
+    LVCOLUMNW c{};
+    c.mask = LVCF_TEXT | LVCF_WIDTH;
+    for (size_t i = 0; i < headers.size(); ++i) {
+        c.cx = (i == 0) ? 140 : 220;
+        c.pszText = const_cast<wchar_t*>(headers[i].c_str());
+        ListView_InsertColumn(m_list, (int)i, &c);
+    }
+
+    m_viewMode = ViewMode::BsaEntry;
+}
+
+void MainWindow::ShowBsaDialogueRowPreview(int row) {
+    if (row < 0 || (size_t)row >= m_bsaDialogueRows.size()) return;
+
+    const auto& src = m_bsaDialogueRows[(size_t)row];
+    std::wstring out;
+    out.reserve(1024);
+
+    if (!m_bsaDialogueTitle.empty()) {
+        out += L"Entry: " + m_bsaDialogueTitle + L"\r\n\r\n";
+    }
+
+    for (size_t i = 0; i < src.size(); ++i) {
+        std::wstring key;
+        if (i < m_bsaDialogueHeaders.size() && !TrimWs(m_bsaDialogueHeaders[i]).empty()) key = m_bsaDialogueHeaders[i];
+        else key = L"Col" + std::to_wstring(i + 1);
+
+        out += key;
+        out += L": ";
+        out += src[i];
+        out += L"\r\n";
+    }
+
+    SetWindowTextW(m_preview, out.c_str());
+}
+
 void MainWindow::SetupListColumns_QuestStages() {
     ListView_DeleteAllItems(m_list);
     while (ListView_DeleteColumn(m_list, 0)) {}
@@ -2974,6 +3136,11 @@ LRESULT CALLBACK MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 
                 if (self->m_viewMode == ViewMode::QuestText) {
                     if (self->m_activeQuest != (size_t)-1) self->ShowQuestTextPreview(self->m_activeQuest, nmlv->iItem);
+                    return 0;
+                }
+
+                if (self->m_viewMode == ViewMode::BsaEntry) {
+                    self->ShowBsaDialogueRowPreview(nmlv->iItem);
                     return 0;
                 }
             }
