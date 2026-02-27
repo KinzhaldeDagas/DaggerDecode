@@ -5,8 +5,6 @@
 #include "../export/CsvWriter.h"
 #include "../arena2/QuestOpcodeDisasm.h"
 #include "../battlespire/BattlespireFormats.h"
-#include <mmsystem.h>
-#pragma comment(lib, "winmm.lib")
 
 namespace ui {
 
@@ -311,6 +309,141 @@ static bool WriteTempFlcAndLaunch(HWND owner, const std::wstring& leafName, cons
     if (launchedPath) *launchedPath = out.wstring();
     if (err) *err = L"Could not launch an FLC player. Tried file association and ffplay/mpv/vlc.";
     return false;
+}
+
+static bool WriteBytesToTempFile(const std::wstring& leafName, const std::vector<uint8_t>& bytes, std::wstring* outPath, std::wstring* err) {
+    std::filesystem::path out = std::filesystem::temp_directory_path() / (L"DaggerfallCS_" + MakeSafeTempLeaf(leafName));
+
+    std::ofstream f(out, std::ios::binary);
+    if (!f) {
+        if (err) *err = L"Failed to write temporary file.";
+        return false;
+    }
+    if (!bytes.empty()) f.write(reinterpret_cast<const char*>(bytes.data()), (std::streamsize)bytes.size());
+    f.close();
+    if (!f.good()) {
+        if (err) *err = L"Failed to finalize temporary file.";
+        return false;
+    }
+
+    if (outPath) *outPath = out.wstring();
+    return true;
+}
+
+struct FlcVoiceClipRef {
+    const battlespire::BsaEntry* entry{};
+    std::wstring speaker;
+    int number{ -1 };
+    std::wstring ext;
+    std::wstring name;
+};
+
+static bool TryParseFlcVoiceName(const std::wstring& name, std::wstring& speaker, int& number, std::wstring& ext) {
+    std::wstring bn = BaseNameOnly(name);
+    std::wsmatch m;
+    static const std::wregex re(LR"(^([a-z]{2})(\d{2})\.(voc|wav)$)");
+    if (!std::regex_match(bn, m, re)) return false;
+    speaker = m[1].str();
+    for (auto& c : speaker) c = (wchar_t)towupper(c);
+    number = _wtoi(m[2].str().c_str());
+    ext = m[3].str();
+    return true;
+}
+
+static std::vector<FlcVoiceClipRef> CollectFlcVoiceClips(const battlespire::BsaArchive& flcBsa, const std::wstring& speakerUpper) {
+    std::vector<FlcVoiceClipRef> out;
+    for (const auto& e : flcBsa.entries) {
+        FlcVoiceClipRef r{};
+        r.entry = &e;
+        r.name = winutil::WidenUtf8(e.name);
+        if (!TryParseFlcVoiceName(r.name, r.speaker, r.number, r.ext)) continue;
+        if (!speakerUpper.empty() && _wcsicmp(r.speaker.c_str(), speakerUpper.c_str()) != 0) continue;
+        out.push_back(std::move(r));
+    }
+
+    std::stable_sort(out.begin(), out.end(), [](const FlcVoiceClipRef& a, const FlcVoiceClipRef& b) {
+        if (a.number != b.number) return a.number < b.number;
+        const bool awav = (_wcsicmp(a.ext.c_str(), L"wav") == 0);
+        const bool bwav = (_wcsicmp(b.ext.c_str(), L"wav") == 0);
+        if (awav != bwav) return awav; // prefer wav over voc when both exist
+        return _wcsicmp(a.name.c_str(), b.name.c_str()) < 0;
+    });
+
+    return out;
+}
+
+static const FlcVoiceClipRef* PickBestPairedVoice(const std::vector<FlcVoiceClipRef>& cands, int preferredNumber, int fallbackNumber) {
+    if (cands.empty()) return nullptr;
+
+    auto pickExact = [&](int n) -> const FlcVoiceClipRef* {
+        if (n < 0) return nullptr;
+        for (const auto& c : cands) if (c.number == n) return &c;
+        return nullptr;
+    };
+
+    if (const FlcVoiceClipRef* ex = pickExact(preferredNumber)) return ex;
+    if (const FlcVoiceClipRef* ex = pickExact(fallbackNumber)) return ex;
+
+    int basis = preferredNumber >= 0 ? preferredNumber : fallbackNumber;
+    if (basis < 0) basis = 0;
+    return &cands[(size_t)(basis % (int)cands.size())];
+}
+
+static bool TryLaunchPairedVoice(HWND owner,
+    const battlespire::BsaArchive& flcBsa,
+    const std::wstring& speakerUpper,
+    int preferredNumber,
+    int fallbackNumber,
+    std::wstring* pairedClipName,
+    std::wstring* err)
+{
+    auto cands = CollectFlcVoiceClips(flcBsa, speakerUpper);
+    const FlcVoiceClipRef* picked = PickBestPairedVoice(cands, preferredNumber, fallbackNumber);
+    if (!picked) {
+        if (err) *err = L"No paired voice asset found.";
+        return false;
+    }
+
+    std::vector<uint8_t> bytes;
+    std::wstring derr;
+    if (!flcBsa.ReadEntryData(*picked->entry, bytes, &derr)) {
+        if (err) *err = L"Failed to read paired voice clip: " + derr;
+        return false;
+    }
+
+    std::vector<uint8_t> wavBytes;
+    std::wstring tempLeaf;
+    if (_wcsicmp(picked->ext.c_str(), L"wav") == 0) {
+        wavBytes = bytes;
+        tempLeaf = picked->speaker + (picked->number < 10 ? L"0" : L"") + std::to_wstring(picked->number) + L".wav";
+    } else {
+        if (!battlespire::WavesPcm::BuildWavFile(bytes, wavBytes, &derr)) {
+            if (err) *err = L"Failed to convert VOC clip to WAV: " + derr;
+            return false;
+        }
+        tempLeaf = picked->speaker + (picked->number < 10 ? L"0" : L"") + std::to_wstring(picked->number) + L"_voc.wav";
+    }
+
+    std::wstring wavPath;
+    if (!WriteBytesToTempFile(tempLeaf, wavBytes, &wavPath, &derr)) {
+        if (err) *err = L"Failed to write paired voice file: " + derr;
+        return false;
+    }
+
+    auto tryOpen = [&](const wchar_t* file, const wchar_t* params) -> bool {
+        HINSTANCE h = ShellExecuteW(owner, L"open", file, params, nullptr, SW_SHOWNORMAL);
+        return (INT_PTR)h > 32;
+    };
+
+    // Force a separate VLC launch for voice so FLC animation + voice can run in parallel windows.
+    const std::wstring quoted = L"\"" + wavPath + L"\"";
+    if (!tryOpen(L"vlc", quoted.c_str())) {
+        if (err) *err = L"Failed to launch paired voice in VLC.";
+        return false;
+    }
+
+    if (pairedClipName) *pairedClipName = picked->name;
+    return true;
 }
 
 static std::wstring ClassifyTxtBsaEntryCategory(const std::string& entryNameUtf8) {
@@ -2837,8 +2970,14 @@ void MainWindow::CmdSpeakBsaDialogueLine(const FlcSpeakTarget& target) {
         return;
     }
 
+    std::wstring pairedVoice;
+    std::wstring voiceErr;
+    const bool voiceOk = TryLaunchPairedVoice(m_hwnd, *flcBsa, parts.speaker, wanted, parts.terminalNumber, &pairedVoice, &voiceErr);
+
     std::wstring where = target.replySide ? L"Reply" : L"NPC SAY";
     std::wstring st = L"Speak " + where + L": " + target.code + L" -> " + picked->name;
+    if (voiceOk) st += L" + voice " + pairedVoice;
+    else if (!voiceErr.empty()) st += L" (voice: " + voiceErr + L")";
     if (stripped) st += L" (normalized)";
     SetStatus(st);
 }
@@ -2878,6 +3017,19 @@ void MainWindow::CmdSpeakSelectedFlcEntry() {
     }
 
     std::wstring st = L"Speak file: " + entryName;
+
+    std::wstring spk, mode;
+    int v = -1;
+    if (TryParseFlcVariant(entryName, spk, mode, v)) {
+        std::wstring pairedVoice;
+        std::wstring voiceErr;
+        if (TryLaunchPairedVoice(m_hwnd, ar, spk, v, v, &pairedVoice, &voiceErr)) {
+            st += L" + voice " + pairedVoice;
+        } else if (!voiceErr.empty()) {
+            st += L" (voice: " + voiceErr + L")";
+        }
+    }
+
     if (stripped) st += L" (normalized)";
     SetStatus(st);
 }
