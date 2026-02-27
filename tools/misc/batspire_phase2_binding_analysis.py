@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-import csv, os, re
+import csv
+import os
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -14,6 +16,11 @@ def family(s:str)->str:
     m=re.match(r'([a-z]+|\d+)', s)
     return m.group(1) if m else s[:1]
 
+
+def md_cell(value: str) -> str:
+    return value.replace('|', '\\|')
+
+
 def main():
     binds=list(csv.DictReader(open(IN_BIND,newline='')))
     tex={r['texture_tag_hex']:r for r in csv.DictReader(open(IN_TEX,newline=''))}
@@ -23,7 +30,8 @@ def main():
     bsi_by_family=defaultdict(list)
     for r in bsi:
         stem=r.get('stem_lower','').strip()
-        if not stem: continue
+        if not stem:
+            continue
         fam=family(stem)
         bsi_families[fam]+=1
         if len(bsi_by_family[fam])<12:
@@ -37,12 +45,13 @@ def main():
         stems=[]
         for token in sample_models.split(' | '):
             token=token.strip()
-            if not token: continue
+            if not token:
+                continue
             stem,_=os.path.splitext(token)
             stems.append(stem.lower())
 
         fam_counter=Counter(family(s) for s in stems)
-        dom_fam = fam_counter.most_common(1)[0][0] if fam_counter else ''
+        dom_fam=fam_counter.most_common(1)[0][0] if fam_counter else ''
         fam_candidates=bsi_by_family.get(dom_fam,[])
 
         rows.append({
@@ -63,10 +72,14 @@ def main():
     with open(out_csv,'w',newline='') as f:
         cols=['texture_tag_hex','face_count','model_count','status','dominant_model_family','family_model_hits','bsi_family_count','bsi_family_examples','sample_models']
         w=csv.DictWriter(f,fieldnames=cols)
-        w.writeheader(); w.writerows(rows)
+        w.writeheader()
+        w.writerows(rows)
 
     total_faces=sum(r['face_count'] for r in rows)
+    nonzero_faces=sum(r['face_count'] for r in rows if r['texture_tag_hex']!='000000000000')
     unbound_faces=sum(r['face_count'] for r in rows if r['status']=='unbound')
+    bound_faces=sum(r['face_count'] for r in rows if r['status'].startswith('bound_'))
+    bound_nonzero_faces=sum(r['face_count'] for r in rows if r['texture_tag_hex']!='000000000000' and r['status'].startswith('bound_'))
     zero_tag_faces=next((r['face_count'] for r in rows if r['texture_tag_hex']=='000000000000'),0)
     with_family_candidates=sum(r['face_count'] for r in rows if r['bsi_family_count']>0)
 
@@ -75,6 +88,9 @@ def main():
     md.append('')
     md.append(f'- total tags: **{len(rows)}**')
     md.append(f'- total faces: **{total_faces}**')
+    md.append(f'- non-zero-tag faces: **{nonzero_faces}**')
+    md.append(f'- bound faces: **{bound_faces}** (**{(100.0*bound_faces/total_faces):.2f}%** of total)')
+    md.append(f'- bound non-zero-tag faces: **{bound_nonzero_faces}** (**{(100.0*bound_nonzero_faces/nonzero_faces):.2f}%** of non-zero)')
     md.append(f'- unbound faces: **{unbound_faces}**')
     md.append(f'- fallback-zero-tag faces: **{zero_tag_faces}**')
     md.append(f'- faces with non-empty BSI family candidates: **{with_family_candidates}** (**{(100.0*with_family_candidates/total_faces):.2f}%**)')
@@ -87,10 +103,14 @@ def main():
     md.append('|---|---:|---|---:|---|')
     shown=0
     for r in rows:
-        if r['bsi_family_count']<=0: continue
-        md.append(f"| `{r['texture_tag_hex']}` | {r['face_count']} | `{r['dominant_model_family']}` | {r['bsi_family_count']} | {r['bsi_family_examples']} |")
+        if r['bsi_family_count']<=0:
+            continue
+        md.append(
+            f"| `{r['texture_tag_hex']}` | {r['face_count']} | `{r['dominant_model_family']}` | {r['bsi_family_count']} | {md_cell(r['bsi_family_examples'])} |"
+        )
         shown+=1
-        if shown>=20: break
+        if shown>=20:
+            break
 
     md.append('')
     md.append('## Recommended hardening steps')
@@ -103,6 +123,7 @@ def main():
 
     print('wrote',out_csv)
     print('wrote',out_md)
+
 
 if __name__=='__main__':
     main()

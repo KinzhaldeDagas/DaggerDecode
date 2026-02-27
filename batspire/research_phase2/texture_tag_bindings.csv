@@ -72,8 +72,8 @@ ffff3f820000,unbound,,none,12,3,,
 004000000000,unbound,,none,12,4,,
 780000000000,unbound,,none,12,12,,
 0060ffff0020,unbound,,none,12,2,,
-1800ea010000,unbound,,none,12,4,,
-040018010000,unbound,,none,12,4,,
+1800ea010000,bound_family_unique,wal12b,medium,12,4,,"auto-bound via unique family candidate (wal, min_face_count=6)"
+040018010000,bound_family_unique,wal12b,medium,12,4,,"auto-bound via unique family candidate (wal, min_face_count=6)"
 00000000803f,unbound,,none,12,6,,
 300000000000,unbound,,none,11,11,,
 a80000000000,unbound,,none,11,9,,
@@ -196,13 +196,13 @@ b5000000b500,unbound,,none,7,2,,
 8effffff0000,unbound,,none,7,1,,
 0080fdff0000,unbound,,none,7,2,,
 00c0000000a0,unbound,,none,7,3,,
-00c000000000,unbound,,none,7,4,,
+00c000000000,bound_family_unique,wal12b,medium,7,4,,"auto-bound via unique family candidate (wal, min_face_count=6)"
 ffffe1930000,unbound,,none,7,1,,
 000000000080,unbound,,none,7,7,,
 0000fdff0000,unbound,,none,7,1,,
 a45bee040200,unbound,,none,7,7,,
 200036020000,unbound,,none,7,7,,
-0080ffff00e0,unbound,,none,7,2,,
+0080ffff00e0,bound_family_unique,wal12b,medium,7,2,,"auto-bound via unique family candidate (wal, min_face_count=6)"
 004000000080,unbound,,none,7,3,,
 f009e204a01a,unbound,,none,6,6,,
 00003c000000,unbound,,none,6,6,,
@@ -229,10 +229,10 @@ feff434d0100,unbound,,none,6,3,,
 0020000000a0,unbound,,none,6,2,,
 b50000004bff,unbound,,none,6,2,,
 3c0071030000,unbound,,none,6,6,,
-07003e020000,unbound,,none,6,3,,
-08003e020000,unbound,,none,6,3,,
-1c0014020000,unbound,,none,6,4,,
-00c0010000a0,unbound,,none,6,4,,
+07003e020000,bound_family_unique,wal12b,medium,6,3,,"auto-bound via unique family candidate (wal, min_face_count=6)"
+08003e020000,bound_family_unique,wal12b,medium,6,3,,"auto-bound via unique family candidate (wal, min_face_count=6)"
+1c0014020000,bound_family_unique,wal12b,medium,6,4,,"auto-bound via unique family candidate (wal, min_face_count=6)"
+00c0010000a0,bound_family_unique,wal12b,medium,6,4,,"auto-bound via unique family candidate (wal, min_face_count=6)"
 00c001000000,unbound,,none,6,2,,
 6c0118140000,unbound,,none,6,3,,
 ee4757bd6aa5,unbound,,none,6,1,,
@@ -260,9 +260,9 @@ c043000000c4,unbound,,none,6,6,,
 9be8a13ee8dc,unbound,,none,6,1,,
 0000feff00c0,unbound,,none,6,2,,
 0000feff0080,unbound,,none,6,2,,
-00c0ffff00e0,unbound,,none,6,4,,
-0000ffff00a0,unbound,,none,6,3,,
-0080ffff00a0,unbound,,none,6,2,,
+00c0ffff00e0,bound_family_unique,wal12b,medium,6,4,,"auto-bound via unique family candidate (wal, min_face_count=6)"
+0000ffff00a0,bound_family_unique,wal12b,medium,6,3,,"auto-bound via unique family candidate (wal, min_face_count=6)"
+0080ffff00a0,bound_family_unique,wal12b,medium,6,2,,"auto-bound via unique family candidate (wal, min_face_count=6)"
 008001000080,unbound,,none,6,3,,
 00c0feff0080,unbound,,none,6,3,,
 00d8ffff0020,unbound,,none,5,4,,
@@ -321,8 +321,8 @@ ffff89fd0000,unbound,,none,5,2,,
 1c00e0020000,unbound,,none,5,1,,
 00001ca50100,unbound,,none,5,1,,
 30009e030000,unbound,,none,5,1,,
-008002000000,unbound,,none,5,4,,
-00c0ffff00a0,unbound,,none,5,4,,
+008002000000,bound_family_unique,wal12b,medium,5,4,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+00c0ffff00a0,bound_family_unique,wal12b,medium,5,4,,"auto-bound via unique family candidate (wal, min_face_count=1)"
 00d0ffff0020,unbound,,none,4,4,,
 002800005d01,unbound,,none,4,4,,
 003000000030,unbound,,none,4,4,,
@@ -374,7 +374,7 @@ e40000000000,unbound,,none,4,4,,
 840000000000,unbound,,none,4,4,,
 0000c0000000,unbound,,none,4,4,,
 01ffffff0000,unbound,,none,4,3,,
-005c000000ed,unbound,,none,4,1,,
+005c000000ed,bound_family_unique,basket,medium,4,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
 000020c30000,unbound,,none,4,2,,
 8a0100000400,unbound,,none,4,1,,
 000000002001,unbound,,none,4,4,,
@@ -429,7 +429,7 @@ df0178000000,unbound,,none,4,4,,
 00000000b601,unbound,,none,4,4,,
 1cffffff7200,unbound,,none,4,2,,
 ff0000000f00,unbound,,none,4,4,,
-0c006c010000,unbound,,none,4,4,,
+0c006c010000,bound_family_unique,wal12b,medium,4,4,,"auto-bound via unique family candidate (wal, min_face_count=1)"
 000002000040,unbound,,none,4,4,,
 900c81030000,unbound,,none,4,4,,
 86000000da00,unbound,,none,4,4,,
@@ -486,12 +486,12 @@ b20c02000000,unbound,,none,4,1,,
 000010c80000,unbound,,none,4,1,,
 000002000080,unbound,,none,4,2,,
 fcff7fbffd6f,unbound,,none,4,1,,
-2800c0010000,unbound,,none,4,4,,
+2800c0010000,bound_family_unique,wal12b,medium,4,4,,"auto-bound via unique family candidate (wal, min_face_count=1)"
 d18100000000,unbound,,none,4,4,,
 3400d0030000,unbound,,none,4,1,,
-0040feff0060,unbound,,none,4,2,,
-0080000000e0,unbound,,none,4,2,,
-0040feff00a0,unbound,,none,4,2,,
+0040feff0060,bound_family_unique,wal12b,medium,4,2,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0080000000e0,bound_family_unique,wal12b,medium,4,2,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0040feff00a0,bound_family_unique,wal12b,medium,4,2,,"auto-bound via unique family candidate (wal, min_face_count=1)"
 0040feff0080,unbound,,none,4,2,,
 603df4040020,unbound,,none,3,3,,
 b036e2043c00,unbound,,none,3,3,,
@@ -518,7 +518,7 @@ d5000ebf4001,unbound,,none,3,1,,
 00000000d800,unbound,,none,3,3,,
 000000006000,unbound,,none,3,3,,
 ac0700004800,unbound,,none,3,1,,
-0042000000e5,unbound,,none,3,1,,
+0042000000e5,bound_family_unique,basket,medium,3,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
 0e0000000000,unbound,,none,3,3,,
 377300000040,unbound,,none,3,3,,
 060078020000,unbound,,none,3,3,,
@@ -588,11 +588,11 @@ b30000004dff,unbound,,none,3,2,,
 2bffffff8c00,unbound,,none,3,1,,
 feffffff01ff,unbound,,none,3,1,,
 00000000f800,unbound,,none,3,2,,
-000016dbfeff,unbound,,none,3,3,,
-bfed00000000,unbound,,none,3,3,,
-080042010000,unbound,,none,3,3,,
-0000fe1a0100,unbound,,none,3,3,,
-1400c0010000,unbound,,none,3,3,,
+000016dbfeff,bound_family_unique,wal12b,medium,3,3,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+bfed00000000,bound_family_unique,wal12b,medium,3,3,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+080042010000,bound_family_unique,wal12b,medium,3,3,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0000fe1a0100,bound_family_unique,wal12b,medium,3,3,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+1400c0010000,bound_family_unique,wal12b,medium,3,3,,"auto-bound via unique family candidate (wal, min_face_count=1)"
 00004001ae10,unbound,,none,3,3,,
 0000b400f00a,unbound,,none,3,3,,
 00000c00b404,unbound,,none,3,3,,
@@ -717,19 +717,19 @@ ffff10c80000,unbound,,none,3,1,,
 0000f22b0000,unbound,,none,3,1,,
 0c00e4170100,unbound,,none,3,1,,
 080006010000,unbound,,none,3,1,,
-000400000019,unbound,,none,3,1,,
+000400000019,bound_family_unique,sheet1,medium,3,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
 900cc5010200,unbound,,none,3,3,,
 2b9c103f413d,unbound,,none,3,1,,
 a90000000000,unbound,,none,3,2,,
 4800aa040000,unbound,,none,3,1,,
-00b000002901,unbound,,none,3,3,,
-00000000f42b,unbound,,none,3,3,,
-2c003a030000,unbound,,none,3,3,,
-00000000eeb1,unbound,,none,3,3,,
-340064030000,unbound,,none,3,3,,
-0200ab4a0100,unbound,,none,3,3,,
-0400aa040000,unbound,,none,3,3,,
-000002008901,unbound,,none,3,3,,
+00b000002901,bound_family_unique,wal12b,medium,3,3,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+00000000f42b,bound_family_unique,wal12b,medium,3,3,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+2c003a030000,bound_family_unique,wal12b,medium,3,3,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+00000000eeb1,bound_family_unique,wal12b,medium,3,3,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+340064030000,bound_family_unique,wal12b,medium,3,3,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0200ab4a0100,bound_family_unique,wal12b,medium,3,3,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0400aa040000,bound_family_unique,wal12b,medium,3,3,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+000002008901,bound_family_unique,wal12b,medium,3,3,,"auto-bound via unique family candidate (wal, min_face_count=1)"
 000054c20000,unbound,,none,3,2,,
 fffff05f0000,unbound,,none,3,1,,
 0040000000a0,unbound,,none,3,2,,
@@ -951,9 +951,9 @@ ca0600003400,unbound,,none,2,1,,
 000800005000,unbound,,none,2,1,,
 760600002c00,unbound,,none,2,1,,
 8c140000a801,unbound,,none,2,1,,
-005c0000003a,unbound,,none,2,1,,
-0042000000d2,unbound,,none,2,1,,
-005c00000017,unbound,,none,2,1,,
+005c0000003a,bound_family_unique,basket,medium,2,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
+0042000000d2,bound_family_unique,basket,medium,2,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
+005c00000017,bound_family_unique,basket,medium,2,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
 080000000000,unbound,,none,2,2,,
 0b0000000000,unbound,,none,2,2,,
 3c00ee040100,unbound,,none,2,2,,
@@ -1452,11 +1452,11 @@ f00300005000,unbound,,none,2,1,,
 0000feff0040,unbound,,none,2,2,,
 0080feff00c0,unbound,,none,2,2,,
 0080010000c0,unbound,,none,2,2,,
-000400000000,unbound,,none,2,1,,
-000300000019,unbound,,none,2,1,,
-000400000009,unbound,,none,2,1,,
-0003000000f0,unbound,,none,2,1,,
-0004000000f8,unbound,,none,2,1,,
+000400000000,bound_family_unique,sheet1,medium,2,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+000300000019,bound_family_unique,sheet1,medium,2,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+000400000009,bound_family_unique,sheet1,medium,2,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+0003000000f0,bound_family_unique,sheet1,medium,2,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+0004000000f8,bound_family_unique,sheet1,medium,2,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
 000080400000,unbound,,none,2,1,,
 0000803fa6d4,unbound,,none,2,1,,
 000000004bd4,unbound,,none,2,1,,
@@ -1525,19 +1525,19 @@ e8fc1cbc0000,unbound,,none,2,1,,
 c10000000000,unbound,,none,2,1,,
 e5fffffffc00,unbound,,none,2,1,,
 aa0000000000,unbound,,none,2,1,,
-0092000000d4,unbound,,none,2,1,,
-009200000025,unbound,,none,2,1,,
-009400000031,unbound,,none,2,1,,
-009b000000d0,unbound,,none,2,1,,
-008b00000032,unbound,,none,2,1,,
+0092000000d4,bound_family_unique,treb,medium,2,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+009200000025,bound_family_unique,treb,medium,2,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+009400000031,bound_family_unique,treb,medium,2,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+009b000000d0,bound_family_unique,treb,medium,2,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+008b00000032,bound_family_unique,treb,medium,2,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
 0000c0420000,unbound,,none,2,1,,
 1000d8010000,unbound,,none,2,1,,
-00b000000000,unbound,,none,2,1,,
-4c00e4040000,unbound,,none,2,1,,
-280092020000,unbound,,none,2,2,,
-0080ffff5901,unbound,,none,2,2,,
-0040feff00e0,unbound,,none,2,2,,
-008000000060,unbound,,none,2,2,,
+00b000000000,bound_family_unique,wal12b,medium,2,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+4c00e4040000,bound_family_unique,wal12b,medium,2,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+280092020000,bound_family_unique,wal12b,medium,2,2,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0080ffff5901,bound_family_unique,wal12b,medium,2,2,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0040feff00e0,bound_family_unique,wal12b,medium,2,2,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+008000000060,bound_family_unique,wal12b,medium,2,2,,"auto-bound via unique family candidate (wal, min_face_count=1)"
 3c007d050000,unbound,,none,2,2,,
 000054420000,unbound,,none,2,2,,
 100500005000,unbound,,none,2,2,,
@@ -2116,18 +2116,18 @@ d41000003801,unbound,,none,1,1,,
 0444010069b7,unbound,,none,1,1,,
 a804d004900c,unbound,,none,1,1,,
 000000001103,unbound,,none,1,1,,
-3c00b50100d2,unbound,,none,1,1,,
-00930000003a,unbound,,none,1,1,,
-0093000000d1,unbound,,none,1,1,,
-005e000000d2,unbound,,none,1,1,,
-005c000000fc,unbound,,none,1,1,,
-008b000000fc,unbound,,none,1,1,,
-005e000000e5,unbound,,none,1,1,,
-0050000000d1,unbound,,none,1,1,,
-0050000000d2,unbound,,none,1,1,,
-0057000000e5,unbound,,none,1,1,,
-005c000000e5,unbound,,none,1,1,,
-0079ffff0017,unbound,,none,1,1,,
+3c00b50100d2,bound_family_unique,basket,medium,1,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
+00930000003a,bound_family_unique,basket,medium,1,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
+0093000000d1,bound_family_unique,basket,medium,1,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
+005e000000d2,bound_family_unique,basket,medium,1,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
+005c000000fc,bound_family_unique,basket,medium,1,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
+008b000000fc,bound_family_unique,basket,medium,1,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
+005e000000e5,bound_family_unique,basket,medium,1,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
+0050000000d1,bound_family_unique,basket,medium,1,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
+0050000000d2,bound_family_unique,basket,medium,1,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
+0057000000e5,bound_family_unique,basket,medium,1,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
+005c000000e5,bound_family_unique,basket,medium,1,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
+0079ffff0017,bound_family_unique,basket,medium,1,1,,"auto-bound via unique family candidate (basket, min_face_count=1)"
 2ebd3b330000,unbound,,none,1,1,,
 302dff040000,unbound,,none,1,1,,
 d02cff040000,unbound,,none,1,1,,
@@ -4145,36 +4145,36 @@ d014ff040000,unbound,,none,1,1,,
 01000000b001,unbound,,none,1,1,,
 01000000e001,unbound,,none,1,1,,
 010000001002,unbound,,none,1,1,,
-3c00710300f8,unbound,,none,1,1,,
-0004000000e6,unbound,,none,1,1,,
-00fcffff00e4,unbound,,none,1,1,,
-0004000000e7,unbound,,none,1,1,,
-00fcffff00e3,unbound,,none,1,1,,
-000300000021,unbound,,none,1,1,,
-00fcffff001d,unbound,,none,1,1,,
-000300000005,unbound,,none,1,1,,
-00fbffff001d,unbound,,none,1,1,,
-0005000000e7,unbound,,none,1,1,,
-0004000000df,unbound,,none,1,1,,
-0005000000e6,unbound,,none,1,1,,
-0004000000f7,unbound,,none,1,1,,
-000300000001,unbound,,none,1,1,,
-0003000000df,unbound,,none,1,1,,
-0003000000e3,unbound,,none,1,1,,
-000200000021,unbound,,none,1,1,,
-000300000008,unbound,,none,1,1,,
-0004000000f0,unbound,,none,1,1,,
-000200000011,unbound,,none,1,1,,
-000300000009,unbound,,none,1,1,,
-000400000008,unbound,,none,1,1,,
-000300000010,unbound,,none,1,1,,
-0005000000f8,unbound,,none,1,1,,
-0005000000f7,unbound,,none,1,1,,
-0005000000ef,unbound,,none,1,1,,
-000400000011,unbound,,none,1,1,,
-ddffffff4500,unbound,,none,1,1,,
-1f000000f1ff,unbound,,none,1,1,,
-e1ffffff0000,unbound,,none,1,1,,
+3c00710300f8,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+0004000000e6,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+00fcffff00e4,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+0004000000e7,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+00fcffff00e3,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+000300000021,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+00fcffff001d,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+000300000005,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+00fbffff001d,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+0005000000e7,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+0004000000df,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+0005000000e6,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+0004000000f7,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+000300000001,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+0003000000df,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+0003000000e3,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+000200000021,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+000300000008,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+0004000000f0,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+000200000011,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+000300000009,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+000400000008,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+000300000010,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+0005000000f8,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+0005000000f7,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+0005000000ef,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+000400000011,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+ddffffff4500,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+1f000000f1ff,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
+e1ffffff0000,bound_family_unique,sheet1,medium,1,1,,"auto-bound via unique family candidate (sheet, min_face_count=1)"
 0000b0c10000,unbound,,none,1,1,,
 04000000804e,unbound,,none,1,1,,
 c04e82030317,unbound,,none,1,1,,
@@ -4442,28 +4442,28 @@ d3ffffff0aff,unbound,,none,1,1,,
 d5ffffff09ff,unbound,,none,1,1,,
 2c0000000aff,unbound,,none,1,1,,
 2d0000000aff,unbound,,none,1,1,,
-009a000000ce,unbound,,none,1,1,,
-009d000000d4,unbound,,none,1,1,,
-009d00000031,unbound,,none,1,1,,
-009c0000002b,unbound,,none,1,1,,
-009d0000002a,unbound,,none,1,1,,
-00910000002b,unbound,,none,1,1,,
-0091000000ca,unbound,,none,1,1,,
-009200000035,unbound,,none,1,1,,
-00a9ffff0030,unbound,,none,1,1,,
-009200000030,unbound,,none,1,1,,
-009b000000c1,unbound,,none,1,1,,
-009a00000032,unbound,,none,1,1,,
-0094000000d0,unbound,,none,1,1,,
-00a9ffff00d4,unbound,,none,1,1,,
-00a9ffff00cf,unbound,,none,1,1,,
-009200000031,unbound,,none,1,1,,
-00920000002a,unbound,,none,1,1,,
-00c5ffff002b,unbound,,none,1,1,,
-0094000000c2,unbound,,none,1,1,,
-007f0000002b,unbound,,none,1,1,,
-007f00000032,unbound,,none,1,1,,
-009c00000032,unbound,,none,1,1,,
+009a000000ce,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+009d000000d4,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+009d00000031,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+009c0000002b,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+009d0000002a,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+00910000002b,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+0091000000ca,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+009200000035,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+00a9ffff0030,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+009200000030,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+009b000000c1,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+009a00000032,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+0094000000d0,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+00a9ffff00d4,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+00a9ffff00cf,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+009200000031,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+00920000002a,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+00c5ffff002b,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+0094000000c2,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+007f0000002b,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+007f00000032,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
+009c00000032,bound_family_unique,treb,medium,1,1,,"auto-bound via unique family candidate (treb, min_face_count=1)"
 0100000070e4,unbound,,none,1,1,,
 2ebdbb3340bd,unbound,,none,1,1,,
 01000000a0e4,unbound,,none,1,1,,
@@ -4493,34 +4493,34 @@ d5ffffff09ff,unbound,,none,1,1,,
 2c0074030000,unbound,,none,1,1,,
 2000bc0c8101,unbound,,none,1,1,,
 48001a083100,unbound,,none,1,1,,
-0000a8440000,unbound,,none,1,1,,
-0000a0c30000,unbound,,none,1,1,,
-480046040000,unbound,,none,1,1,,
-4c0046040000,unbound,,none,1,1,,
-feffab4a0100,unbound,,none,1,1,,
-3c000020feff,unbound,,none,1,1,,
-0c00fba5ffff,unbound,,none,1,1,,
-00000000fba5,unbound,,none,1,1,,
-50001e050000,unbound,,none,1,1,,
-3c00b8030000,unbound,,none,1,1,,
-0000eeb10200,unbound,,none,1,1,,
-540058050000,unbound,,none,1,1,,
-400046040000,unbound,,none,1,1,,
-0500aa040000,unbound,,none,1,1,,
-070058050000,unbound,,none,1,1,,
-280014020000,unbound,,none,1,1,,
-e0ff7f3fee0f,unbound,,none,1,1,,
-00e8a1be0000,unbound,,none,1,1,,
-0405c2020000,unbound,,none,1,1,,
-e0ff7f3fed0f,unbound,,none,1,1,,
-402204058022,unbound,,none,1,1,,
-dfffc7c46801,unbound,,none,1,1,,
-540bee04640f,unbound,,none,1,1,,
-3c00ee0400e0,unbound,,none,1,1,,
-0080010000a0,unbound,,none,1,1,,
-0700000000e0,unbound,,none,1,1,,
-0000ffff6500,unbound,,none,1,1,,
-0420ee041c00,unbound,,none,1,1,,
+0000a8440000,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0000a0c30000,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+480046040000,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+4c0046040000,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+feffab4a0100,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+3c000020feff,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0c00fba5ffff,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+00000000fba5,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+50001e050000,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+3c00b8030000,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0000eeb10200,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+540058050000,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+400046040000,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0500aa040000,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+070058050000,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+280014020000,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+e0ff7f3fee0f,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+00e8a1be0000,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0405c2020000,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+e0ff7f3fed0f,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+402204058022,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+dfffc7c46801,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+540bee04640f,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+3c00ee0400e0,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0080010000a0,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0700000000e0,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0000ffff6500,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
+0420ee041c00,bound_family_unique,wal12b,medium,1,1,,"auto-bound via unique family candidate (wal, min_face_count=1)"
 060096030000,unbound,,none,1,1,,
 2000f0010000,unbound,,none,1,1,,
 0c009c010000,unbound,,none,1,1,,

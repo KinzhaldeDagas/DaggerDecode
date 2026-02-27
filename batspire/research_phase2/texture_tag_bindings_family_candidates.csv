@@ -72,8 +72,8 @@ ffff3f820000,12,3,unbound,bsp,2,0,,BRG02.3D | BSP_CAT1.3D | BSP_WAL3.3D
 004000000000,12,4,unbound,bsp,1,0,,BSP_CL12.3D | KEEP01.3D | L4LAND.3D | WAL09.3D
 780000000000,12,12,unbound,l,6,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,BSP_WAL8.3D | GAUNTS.3D | L47.3D | L48.3D | L4HPL01.3D | L4HPL02.3D | L4HPL03.3D | L4HPL04.3D
 0060ffff0020,12,2,unbound,dng,2,0,,DNG05.3D | DNG06.3D
-1800ea010000,12,4,unbound,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D | ZWIDE.3D
-040018010000,12,4,unbound,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D | ZWIDE.3D
+1800ea010000,12,4,bound_family_unique,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D | ZWIDE.3D
+040018010000,12,4,bound_family_unique,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D | ZWIDE.3D
 00000000803f,12,6,unbound,l,6,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,L4HPL01.3D | L4HPL02.3D | L4HPL03.3D | L4HPL04.3D | L4HPL05.3D | L4HPL06.3D
 300000000000,11,11,unbound,l,3,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,7BOLT.3D | 7TREE.3D | BSP_WAL8.3D | EARROW.3D | EWARAXE.3D | L410.3D | L47.3D | L48.3D
 a80000000000,11,9,unbound,bsp,1,0,,BSP_GTHS.3D | EARROW.3D | EMACE.3D | ESTAFF.3D | EWARAXE.3D | EXBOW.3D | L6Q01.3D | TOWER1.3D
@@ -196,13 +196,13 @@ b5000000b500,7,2,unbound,emace,1,0,,EMACE.3D | ESTAFF.3D
 8effffff0000,7,1,unbound,espear,1,0,,ESPEAR.3D
 0080fdff0000,7,2,unbound,keep,1,0,,KEEP01.3D | WAL09.3D
 00c0000000a0,7,3,unbound,keep,1,0,,KEEP01.3D | WAL09.3D | ZPLAT.3D
-00c000000000,7,4,unbound,wal,3,1,wal12b,KEEP01.3D | WAL09.3D | WAL12.3D | WAL13.3D
+00c000000000,7,4,bound_family_unique,wal,3,1,wal12b,KEEP01.3D | WAL09.3D | WAL12.3D | WAL13.3D
 ffffe1930000,7,1,unbound,l,1,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,L414.3D
 000000000080,7,7,unbound,l,7,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,L414.3D | L435.3D | L436.3D | L4BLOK1.3D | L4BLOK2.3D | L4BLOK3.3D | L4BLOK4.3D
 0000fdff0000,7,1,unbound,l,1,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,L434.3D
 a45bee040200,7,7,unbound,l,7,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,L4HPL01.3D | L4HPL02.3D | L4HPL03.3D | L4HPL04.3D | L4HPL05.3D | L4HPL06.3D | L4PASS6.3D
 200036020000,7,7,unbound,l,6,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,L4HPL01.3D | L4HPL02.3D | L4HPL03.3D | L4HPL04.3D | L4HPL05.3D | L4HPL06.3D | QCOVE.3D
-0080ffff00e0,7,2,unbound,wal,2,1,wal12b,WAL14.3D | WAL16.3D
+0080ffff00e0,7,2,bound_family_unique,wal,2,1,wal12b,WAL14.3D | WAL16.3D
 004000000080,7,3,unbound,zbuzz,1,0,,ZBUZZ.3D | ZCULT.3D | ZTURN.3D
 f009e204a01a,6,6,unbound,7,6,0,,7ARCH.3D | 7BSTAL.3D | 7PYLON1.3D | 7PYLON2.3D | 7STAL.3D | 7SWIVEL.3D
 00003c000000,6,6,unbound,7,1,0,,7BASE.3D | EARROW.3D | EMACE.3D | ESTAFF.3D | EWARAXE.3D | L443.3D
@@ -229,10 +229,10 @@ feff434d0100,6,3,unbound,bsp,3,0,,BSP_DNG4.3D | BSP_WAL4.3D | BSP_WAL5.3D
 0020000000a0,6,2,unbound,dng,2,0,,DNG05.3D | DNG06.3D
 b50000004bff,6,2,unbound,emace,1,0,,EMACE.3D | ESTAFF.3D
 3c0071030000,6,6,unbound,greaves,1,0,,GREAVES.3D | POULDS.3D | SIGILE.3D | SIGILH.3D | SIGILM.3D | SIGILP.3D
-07003e020000,6,3,unbound,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D
-08003e020000,6,3,unbound,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D
-1c0014020000,6,4,unbound,wal,2,1,wal12b,KCAT3.3D | QCOVE.3D | WAL12.3D | WAL13.3D
-00c0010000a0,6,4,unbound,wal,3,1,wal12b,KEEP01.3D | WAL09.3D | WAL14.3D | WAL16.3D
+07003e020000,6,3,bound_family_unique,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D
+08003e020000,6,3,bound_family_unique,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D
+1c0014020000,6,4,bound_family_unique,wal,2,1,wal12b,KCAT3.3D | QCOVE.3D | WAL12.3D | WAL13.3D
+00c0010000a0,6,4,bound_family_unique,wal,3,1,wal12b,KEEP01.3D | WAL09.3D | WAL14.3D | WAL16.3D
 00c001000000,6,2,unbound,keep,1,0,,KEEP01.3D | WAL09.3D
 6c0118140000,6,3,unbound,l,3,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,L2PIL4.3D | L2RP2.3D | L2RP3.3D
 ee4757bd6aa5,6,1,unbound,l,1,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,L411.3D
@@ -260,9 +260,9 @@ c043000000c4,6,6,unbound,l,6,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win |
 9be8a13ee8dc,6,1,unbound,qtop,1,0,,QTOP.3D
 0000feff00c0,6,2,unbound,sc,2,0,,SC09.3D | SC16.3D
 0000feff0080,6,2,unbound,sc,2,0,,SC09.3D | SC16.3D
-00c0ffff00e0,6,4,unbound,wal,2,1,wal12b,WAL14.3D | WAL16.3D | ZBUZZ.3D | ZPLAT.3D
-0000ffff00a0,6,3,unbound,wal,2,1,wal12b,WAL14.3D | WAL16.3D | ZPLAT.3D
-0080ffff00a0,6,2,unbound,wal,2,1,wal12b,WAL14.3D | WAL16.3D
+00c0ffff00e0,6,4,bound_family_unique,wal,2,1,wal12b,WAL14.3D | WAL16.3D | ZBUZZ.3D | ZPLAT.3D
+0000ffff00a0,6,3,bound_family_unique,wal,2,1,wal12b,WAL14.3D | WAL16.3D | ZPLAT.3D
+0080ffff00a0,6,2,bound_family_unique,wal,2,1,wal12b,WAL14.3D | WAL16.3D
 008001000080,6,3,unbound,zbuzz,1,0,,ZBUZZ.3D | ZCULT.3D | ZTURN.3D
 00c0feff0080,6,3,unbound,zbuzz,1,0,,ZBUZZ.3D | ZCULT.3D | ZTURN.3D
 00d8ffff0020,5,4,unbound,7,4,0,,7ARCH.3D | 7BSTAL.3D | 7STAL.3D | 7SWIVEL.3D
@@ -321,8 +321,8 @@ ffff89fd0000,5,2,unbound,bsp,1,0,,BSP_DNG2.3D | TWR02.3D
 1c00e0020000,5,1,unbound,l,1,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,L4HALO.3D
 00001ca50100,5,1,unbound,sc,1,0,,SC04.3D
 30009e030000,5,1,unbound,twr,1,0,,TWR02.3D
-008002000000,5,4,unbound,wal,4,1,wal12b,WAL09.3D | WAL10.3D | WAL12.3D | WAL13.3D
-00c0ffff00a0,5,4,unbound,wal,2,1,wal12b,WAL14.3D | WAL16.3D | ZBUZZ.3D | ZPLAT.3D
+008002000000,5,4,bound_family_unique,wal,4,1,wal12b,WAL09.3D | WAL10.3D | WAL12.3D | WAL13.3D
+00c0ffff00a0,5,4,bound_family_unique,wal,2,1,wal12b,WAL14.3D | WAL16.3D | ZBUZZ.3D | ZPLAT.3D
 00d0ffff0020,4,4,unbound,7,4,0,,7ARCH.3D | 7BSTAL.3D | 7STAL.3D | 7SWIVEL.3D
 002800005d01,4,4,unbound,7,4,0,,7ARCH.3D | 7BSTAL.3D | 7STAL.3D | 7SWIVEL.3D
 003000000030,4,4,unbound,7,4,0,,7ARCH.3D | 7BSTAL.3D | 7STAL.3D | 7SWIVEL.3D
@@ -374,7 +374,7 @@ e40000000000,4,4,unbound,7,1,0,,7TREE.3D | GREAVES.3D | L47.3D | T5PIL4.3D
 840000000000,4,4,unbound,l,3,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,7TREE.3D | L4STAIR.3D | L6Q01.3D | L6Q03.3D
 0000c0000000,4,4,unbound,7,1,0,,7TREE.3D | BSP_WAL8.3D | GAUNTS.3D | QBALC2.3D
 01ffffff0000,4,3,unbound,a,1,0,,A06.3D | BSP_CL16.3D | L4LAND.3D
-005c000000ed,4,1,unbound,basket,1,1,basket,BASKET1.3D
+005c000000ed,4,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
 000020c30000,4,2,unbound,bsp,2,0,,BSP_CL02.3D | BSP_CL19.3D
 8a0100000400,4,1,unbound,bsp,1,0,,BSP_CL06.3D
 000000002001,4,4,unbound,l,2,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,BSP_CL11.3D | GTHS01.3D | L410.3D | L4STAIR.3D
@@ -429,7 +429,7 @@ df0178000000,4,4,unbound,earrow,1,0,,EARROW.3D | EMACE.3D | ESTAFF.3D | EWARAXE.
 00000000b601,4,4,unbound,earrow,1,0,,EARROW.3D | EMACE.3D | ESTAFF.3D | EWARAXE.3D
 1cffffff7200,4,2,unbound,emace,1,0,,EMACE.3D | ESTAFF.3D
 ff0000000f00,4,4,unbound,l,3,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,ESPEAR.3D | L2PIL14.3D | L2PIL7.3D | L2RP1.3D
-0c006c010000,4,4,unbound,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D | ZWIDE.3D
+0c006c010000,4,4,bound_family_unique,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D | ZWIDE.3D
 000002000040,4,4,unbound,sc,2,0,,KEEP01.3D | SC09.3D | SC16.3D | WAL09.3D
 900c81030000,4,4,unbound,l,4,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,L2PIL11.3D | L2PIL14.3D | L2PIL7.3D | L2RP1.3D
 86000000da00,4,4,unbound,l,4,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,L2PIL11.3D | L2PIL14.3D | L2PIL7.3D | L2RP1.3D
@@ -486,12 +486,12 @@ b20c02000000,4,1,unbound,qcove,1,0,,QCOVE.3D
 000010c80000,4,1,unbound,sc,1,0,,SC08.3D
 000002000080,4,2,unbound,sc,2,0,,SC09.3D | SC16.3D
 fcff7fbffd6f,4,1,unbound,sc,1,0,,SC12.3D
-2800c0010000,4,4,unbound,wal,3,1,wal12b,SC16.3D | WAL10.3D | WAL12.3D | WAL13.3D
+2800c0010000,4,4,bound_family_unique,wal,3,1,wal12b,SC16.3D | WAL10.3D | WAL12.3D | WAL13.3D
 d18100000000,4,4,unbound,sigill,1,0,,SIGILL.3D | SIGILN.3D | SIGILQ.3D | SIGILS.3D
 3400d0030000,4,1,unbound,twr,1,0,,TWR02.3D
-0040feff0060,4,2,unbound,wal,2,1,wal12b,WAL14.3D | WAL16.3D
-0080000000e0,4,2,unbound,wal,2,1,wal12b,WAL14.3D | WAL16.3D
-0040feff00a0,4,2,unbound,wal,2,1,wal12b,WAL14.3D | WAL16.3D
+0040feff0060,4,2,bound_family_unique,wal,2,1,wal12b,WAL14.3D | WAL16.3D
+0080000000e0,4,2,bound_family_unique,wal,2,1,wal12b,WAL14.3D | WAL16.3D
+0040feff00a0,4,2,bound_family_unique,wal,2,1,wal12b,WAL14.3D | WAL16.3D
 0040feff0080,4,2,unbound,zcult,1,0,,ZCULT.3D | ZTURN.3D
 603df4040020,3,3,unbound,7,3,0,,7ARCH.3D | 7BSTAL.3D | 7STAL.3D
 b036e2043c00,3,3,unbound,7,3,0,,7ATDOWN.3D | 7ATUP.3D | 7SIL6.3D
@@ -518,7 +518,7 @@ d5000ebf4001,3,1,unbound,7,1,0,,7HARPOON.3D
 00000000d800,3,3,unbound,l,2,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,7TREE.3D | L47.3D | L48.3D
 000000006000,3,3,unbound,7,1,0,,7TREE.3D | BSP_WAL8.3D | L6Q01.3D
 ac0700004800,3,1,unbound,a,1,0,,A27.3D
-0042000000e5,3,1,unbound,basket,1,1,basket,BASKET1.3D
+0042000000e5,3,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
 0e0000000000,3,3,unbound,bsp,2,0,,BBASE.3D | BSP_CL18.3D | BSP_LVA2.3D
 377300000040,3,3,unbound,bsp,2,0,,BRG02.3D | BSP_CAT1.3D | BSP_WAL3.3D
 060078020000,3,3,unbound,bsp,2,0,,BRG02.3D | BSP_CAT1.3D | BSP_WAL3.3D
@@ -588,11 +588,11 @@ b30000004dff,3,2,unbound,emace,1,0,,EMACE.3D | ESTAFF.3D
 2bffffff8c00,3,1,unbound,house,1,0,,HOUSE9.3D
 feffffff01ff,3,1,unbound,house,1,0,,HOUSE9.3D
 00000000f800,3,2,unbound,isle,1,0,,ISLE1.3D | L4LSKY.3D
-000016dbfeff,3,3,unbound,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D
-bfed00000000,3,3,unbound,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D
-080042010000,3,3,unbound,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D
-0000fe1a0100,3,3,unbound,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D
-1400c0010000,3,3,unbound,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D
+000016dbfeff,3,3,bound_family_unique,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D
+bfed00000000,3,3,bound_family_unique,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D
+080042010000,3,3,bound_family_unique,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D
+0000fe1a0100,3,3,bound_family_unique,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D
+1400c0010000,3,3,bound_family_unique,wal,2,1,wal12b,KCAT3.3D | WAL12.3D | WAL13.3D
 00004001ae10,3,3,unbound,l,3,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,L2PIL14.3D | L2PIL7.3D | L2RP1.3D
 0000b400f00a,3,3,unbound,l,3,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,L2PIL14.3D | L2PIL7.3D | L2RP1.3D
 00000c00b404,3,3,unbound,l,3,7,l2sky | l5sky | l6bgdr1 | l6mir | l6sky | l6win | l8sky,L2PIL14.3D | L2PIL7.3D | L2RP1.3D
@@ -717,19 +717,19 @@ ffff10c80000,3,1,unbound,sc,1,0,,SC08.3D
 0000f22b0000,3,1,unbound,sc,1,0,,SC08.3D
 0c00e4170100,3,1,unbound,sc,1,0,,SC08.3D
 080006010000,3,1,unbound,sc,1,0,,SC08.3D
-000400000019,3,1,unbound,sheet,1,1,sheet1,SHEET.3D
+000400000019,3,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
 900cc5010200,3,3,unbound,t,2,0,,T1A.3D | T5CENT3.3D | TREB5.3D
 2b9c103f413d,3,1,unbound,t,1,0,,T5LEVBX.3D
 a90000000000,3,2,unbound,tower,2,0,,TOWER1.3D | TOWER2.3D
 4800aa040000,3,1,unbound,twr,1,0,,TWR02.3D
-00b000002901,3,3,unbound,wal,3,1,wal12b,WAL09.3D | WAL12.3D | WAL13.3D
-00000000f42b,3,3,unbound,wal,3,1,wal12b,WAL10.3D | WAL12.3D | WAL13.3D
-2c003a030000,3,3,unbound,wal,3,1,wal12b,WAL10.3D | WAL12.3D | WAL13.3D
-00000000eeb1,3,3,unbound,wal,3,1,wal12b,WAL10.3D | WAL12.3D | WAL13.3D
-340064030000,3,3,unbound,wal,3,1,wal12b,WAL10.3D | WAL12.3D | WAL13.3D
-0200ab4a0100,3,3,unbound,wal,3,1,wal12b,WAL10.3D | WAL12.3D | WAL13.3D
-0400aa040000,3,3,unbound,wal,3,1,wal12b,WAL10.3D | WAL12.3D | WAL13.3D
-000002008901,3,3,unbound,wal,3,1,wal12b,WAL10.3D | WAL12.3D | WAL13.3D
+00b000002901,3,3,bound_family_unique,wal,3,1,wal12b,WAL09.3D | WAL12.3D | WAL13.3D
+00000000f42b,3,3,bound_family_unique,wal,3,1,wal12b,WAL10.3D | WAL12.3D | WAL13.3D
+2c003a030000,3,3,bound_family_unique,wal,3,1,wal12b,WAL10.3D | WAL12.3D | WAL13.3D
+00000000eeb1,3,3,bound_family_unique,wal,3,1,wal12b,WAL10.3D | WAL12.3D | WAL13.3D
+340064030000,3,3,bound_family_unique,wal,3,1,wal12b,WAL10.3D | WAL12.3D | WAL13.3D
+0200ab4a0100,3,3,bound_family_unique,wal,3,1,wal12b,WAL10.3D | WAL12.3D | WAL13.3D
+0400aa040000,3,3,bound_family_unique,wal,3,1,wal12b,WAL10.3D | WAL12.3D | WAL13.3D
+000002008901,3,3,bound_family_unique,wal,3,1,wal12b,WAL10.3D | WAL12.3D | WAL13.3D
 000054c20000,3,2,unbound,zband,1,0,,ZBAND.3D | ZPLANKB.3D
 fffff05f0000,3,1,unbound,zband,1,0,,ZBAND.3D
 0040000000a0,3,2,unbound,zbuzz,1,0,,ZBUZZ.3D | ZPLAT.3D
@@ -951,9 +951,9 @@ ca0600003400,2,1,unbound,a,1,0,,A27.3D
 000800005000,2,1,unbound,a,1,0,,A27.3D
 760600002c00,2,1,unbound,a,1,0,,A27.3D
 8c140000a801,2,1,unbound,a,1,0,,A27.3D
-005c0000003a,2,1,unbound,basket,1,1,basket,BASKET1.3D
-0042000000d2,2,1,unbound,basket,1,1,basket,BASKET1.3D
-005c00000017,2,1,unbound,basket,1,1,basket,BASKET1.3D
+005c0000003a,2,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
+0042000000d2,2,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
+005c00000017,2,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
 080000000000,2,2,unbound,bbase,1,0,,BBASE.3D | L4SLOPE.3D
 0b0000000000,2,2,unbound,bbase,1,0,,BBASE.3D | L4SLOPE.3D
 3c00ee040100,2,2,unbound,brg,1,0,,BRG02.3D | L43.3D
@@ -1452,11 +1452,11 @@ f00300005000,2,1,unbound,qramp,1,0,,QRAMP2.3D
 0000feff0040,2,2,unbound,sc,2,0,,SC09.3D | SC16.3D
 0080feff00c0,2,2,unbound,sc,2,0,,SC09.3D | SC16.3D
 0080010000c0,2,2,unbound,sc,2,0,,SC09.3D | SC16.3D
-000400000000,2,1,unbound,sheet,1,1,sheet1,SHEET.3D
-000300000019,2,1,unbound,sheet,1,1,sheet1,SHEET.3D
-000400000009,2,1,unbound,sheet,1,1,sheet1,SHEET.3D
-0003000000f0,2,1,unbound,sheet,1,1,sheet1,SHEET.3D
-0004000000f8,2,1,unbound,sheet,1,1,sheet1,SHEET.3D
+000400000000,2,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+000300000019,2,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+000400000009,2,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+0003000000f0,2,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+0004000000f8,2,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
 000080400000,2,1,unbound,sigilb,1,0,,SIGILB.3D
 0000803fa6d4,2,1,unbound,sigilc,1,0,,SIGILC.3D
 000000004bd4,2,1,unbound,sigilf,1,0,,SIGILF.3D
@@ -1525,19 +1525,19 @@ e8fc1cbc0000,2,1,unbound,t,1,0,,T5LEVBX.3D
 c10000000000,2,1,unbound,tower,1,0,,TOWER2.3D
 e5fffffffc00,2,1,unbound,tower,1,0,,TOWER2.3D
 aa0000000000,2,1,unbound,tower,1,0,,TOWER2.3D
-0092000000d4,2,1,unbound,treb,1,1,treb,TREB5.3D
-009200000025,2,1,unbound,treb,1,1,treb,TREB5.3D
-009400000031,2,1,unbound,treb,1,1,treb,TREB5.3D
-009b000000d0,2,1,unbound,treb,1,1,treb,TREB5.3D
-008b00000032,2,1,unbound,treb,1,1,treb,TREB5.3D
+0092000000d4,2,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+009200000025,2,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+009400000031,2,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+009b000000d0,2,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+008b00000032,2,1,bound_family_unique,treb,1,1,treb,TREB5.3D
 0000c0420000,2,1,unbound,twr,1,0,,TWR02.3D
 1000d8010000,2,1,unbound,twr,1,0,,TWR02.3D
-00b000000000,2,1,unbound,wal,1,1,wal12b,WAL09.3D
-4c00e4040000,2,1,unbound,wal,1,1,wal12b,WAL10.3D
-280092020000,2,2,unbound,wal,1,1,wal12b,WAL10.3D | ZWIDE.3D
-0080ffff5901,2,2,unbound,wal,2,1,wal12b,WAL12.3D | WAL13.3D
-0040feff00e0,2,2,unbound,wal,2,1,wal12b,WAL14.3D | WAL16.3D
-008000000060,2,2,unbound,wal,2,1,wal12b,WAL14.3D | WAL16.3D
+00b000000000,2,1,bound_family_unique,wal,1,1,wal12b,WAL09.3D
+4c00e4040000,2,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+280092020000,2,2,bound_family_unique,wal,1,1,wal12b,WAL10.3D | ZWIDE.3D
+0080ffff5901,2,2,bound_family_unique,wal,2,1,wal12b,WAL12.3D | WAL13.3D
+0040feff00e0,2,2,bound_family_unique,wal,2,1,wal12b,WAL14.3D | WAL16.3D
+008000000060,2,2,bound_family_unique,wal,2,1,wal12b,WAL14.3D | WAL16.3D
 3c007d050000,2,2,unbound,z,1,0,,Z1.3D | ZBAND.3D
 000054420000,2,2,unbound,zband,1,0,,ZBAND.3D | ZPLANKB.3D
 100500005000,2,2,unbound,zbrace,2,0,,ZBRACE.3D | ZBRACE2.3D
@@ -2116,18 +2116,18 @@ d41000003801,1,1,unbound,a,1,0,,A27.3D
 0444010069b7,1,1,unbound,a,1,0,,A27.3D
 a804d004900c,1,1,unbound,a,1,0,,A27.3D
 000000001103,1,1,unbound,a,1,0,,A27.3D
-3c00b50100d2,1,1,unbound,basket,1,1,basket,BASKET1.3D
-00930000003a,1,1,unbound,basket,1,1,basket,BASKET1.3D
-0093000000d1,1,1,unbound,basket,1,1,basket,BASKET1.3D
-005e000000d2,1,1,unbound,basket,1,1,basket,BASKET1.3D
-005c000000fc,1,1,unbound,basket,1,1,basket,BASKET1.3D
-008b000000fc,1,1,unbound,basket,1,1,basket,BASKET1.3D
-005e000000e5,1,1,unbound,basket,1,1,basket,BASKET1.3D
-0050000000d1,1,1,unbound,basket,1,1,basket,BASKET1.3D
-0050000000d2,1,1,unbound,basket,1,1,basket,BASKET1.3D
-0057000000e5,1,1,unbound,basket,1,1,basket,BASKET1.3D
-005c000000e5,1,1,unbound,basket,1,1,basket,BASKET1.3D
-0079ffff0017,1,1,unbound,basket,1,1,basket,BASKET1.3D
+3c00b50100d2,1,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
+00930000003a,1,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
+0093000000d1,1,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
+005e000000d2,1,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
+005c000000fc,1,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
+008b000000fc,1,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
+005e000000e5,1,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
+0050000000d1,1,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
+0050000000d2,1,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
+0057000000e5,1,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
+005c000000e5,1,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
+0079ffff0017,1,1,bound_family_unique,basket,1,1,basket,BASKET1.3D
 2ebd3b330000,1,1,unbound,bbase,1,0,,BBASE.3D
 302dff040000,1,1,unbound,bbase,1,0,,BBASE.3D
 d02cff040000,1,1,unbound,bbase,1,0,,BBASE.3D
@@ -4145,36 +4145,36 @@ d014ff040000,1,1,unbound,scbuttn,1,0,,SCBUTTN.3D
 01000000b001,1,1,unbound,sclift,1,0,,SCLIFT.3D
 01000000e001,1,1,unbound,sclift,1,0,,SCLIFT.3D
 010000001002,1,1,unbound,sclift,1,0,,SCLIFT.3D
-3c00710300f8,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-0004000000e6,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-00fcffff00e4,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-0004000000e7,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-00fcffff00e3,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-000300000021,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-00fcffff001d,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-000300000005,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-00fbffff001d,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-0005000000e7,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-0004000000df,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-0005000000e6,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-0004000000f7,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-000300000001,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-0003000000df,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-0003000000e3,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-000200000021,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-000300000008,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-0004000000f0,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-000200000011,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-000300000009,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-000400000008,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-000300000010,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-0005000000f8,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-0005000000f7,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-0005000000ef,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-000400000011,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-ddffffff4500,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-1f000000f1ff,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
-e1ffffff0000,1,1,unbound,sheet,1,1,sheet1,SHEET.3D
+3c00710300f8,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+0004000000e6,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+00fcffff00e4,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+0004000000e7,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+00fcffff00e3,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+000300000021,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+00fcffff001d,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+000300000005,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+00fbffff001d,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+0005000000e7,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+0004000000df,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+0005000000e6,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+0004000000f7,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+000300000001,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+0003000000df,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+0003000000e3,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+000200000021,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+000300000008,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+0004000000f0,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+000200000011,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+000300000009,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+000400000008,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+000300000010,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+0005000000f8,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+0005000000f7,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+0005000000ef,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+000400000011,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+ddffffff4500,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+1f000000f1ff,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
+e1ffffff0000,1,1,bound_family_unique,sheet,1,1,sheet1,SHEET.3D
 0000b0c10000,1,1,unbound,sigilb,1,0,,SIGILB.3D
 04000000804e,1,1,unbound,sigilb,1,0,,SIGILB.3D
 c04e82030317,1,1,unbound,sigilb,1,0,,SIGILB.3D
@@ -4442,28 +4442,28 @@ d3ffffff0aff,1,1,unbound,tower,1,0,,TOWER2.3D
 d5ffffff09ff,1,1,unbound,tower,1,0,,TOWER2.3D
 2c0000000aff,1,1,unbound,tower,1,0,,TOWER2.3D
 2d0000000aff,1,1,unbound,tower,1,0,,TOWER2.3D
-009a000000ce,1,1,unbound,treb,1,1,treb,TREB5.3D
-009d000000d4,1,1,unbound,treb,1,1,treb,TREB5.3D
-009d00000031,1,1,unbound,treb,1,1,treb,TREB5.3D
-009c0000002b,1,1,unbound,treb,1,1,treb,TREB5.3D
-009d0000002a,1,1,unbound,treb,1,1,treb,TREB5.3D
-00910000002b,1,1,unbound,treb,1,1,treb,TREB5.3D
-0091000000ca,1,1,unbound,treb,1,1,treb,TREB5.3D
-009200000035,1,1,unbound,treb,1,1,treb,TREB5.3D
-00a9ffff0030,1,1,unbound,treb,1,1,treb,TREB5.3D
-009200000030,1,1,unbound,treb,1,1,treb,TREB5.3D
-009b000000c1,1,1,unbound,treb,1,1,treb,TREB5.3D
-009a00000032,1,1,unbound,treb,1,1,treb,TREB5.3D
-0094000000d0,1,1,unbound,treb,1,1,treb,TREB5.3D
-00a9ffff00d4,1,1,unbound,treb,1,1,treb,TREB5.3D
-00a9ffff00cf,1,1,unbound,treb,1,1,treb,TREB5.3D
-009200000031,1,1,unbound,treb,1,1,treb,TREB5.3D
-00920000002a,1,1,unbound,treb,1,1,treb,TREB5.3D
-00c5ffff002b,1,1,unbound,treb,1,1,treb,TREB5.3D
-0094000000c2,1,1,unbound,treb,1,1,treb,TREB5.3D
-007f0000002b,1,1,unbound,treb,1,1,treb,TREB5.3D
-007f00000032,1,1,unbound,treb,1,1,treb,TREB5.3D
-009c00000032,1,1,unbound,treb,1,1,treb,TREB5.3D
+009a000000ce,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+009d000000d4,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+009d00000031,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+009c0000002b,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+009d0000002a,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+00910000002b,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+0091000000ca,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+009200000035,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+00a9ffff0030,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+009200000030,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+009b000000c1,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+009a00000032,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+0094000000d0,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+00a9ffff00d4,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+00a9ffff00cf,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+009200000031,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+00920000002a,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+00c5ffff002b,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+0094000000c2,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+007f0000002b,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+007f00000032,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
+009c00000032,1,1,bound_family_unique,treb,1,1,treb,TREB5.3D
 0100000070e4,1,1,unbound,trp,1,0,,TRP03.3D
 2ebdbb3340bd,1,1,unbound,trp,1,0,,TRP03.3D
 01000000a0e4,1,1,unbound,trp,1,0,,TRP03.3D
@@ -4493,34 +4493,34 @@ d5ffffff09ff,1,1,unbound,tower,1,0,,TOWER2.3D
 2c0074030000,1,1,unbound,twr,1,0,,TWR02.3D
 2000bc0c8101,1,1,unbound,twr,1,0,,TWR02.3D
 48001a083100,1,1,unbound,twr,1,0,,TWR02.3D
-0000a8440000,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-0000a0c30000,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-480046040000,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-4c0046040000,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-feffab4a0100,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-3c000020feff,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-0c00fba5ffff,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-00000000fba5,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-50001e050000,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-3c00b8030000,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-0000eeb10200,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-540058050000,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-400046040000,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-0500aa040000,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-070058050000,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-280014020000,1,1,unbound,wal,1,1,wal12b,WAL10.3D
-e0ff7f3fee0f,1,1,unbound,wal,1,1,wal12b,WAL11.3D
-00e8a1be0000,1,1,unbound,wal,1,1,wal12b,WAL11.3D
-0405c2020000,1,1,unbound,wal,1,1,wal12b,WAL11.3D
-e0ff7f3fed0f,1,1,unbound,wal,1,1,wal12b,WAL11.3D
-402204058022,1,1,unbound,wal,1,1,wal12b,WAL11.3D
-dfffc7c46801,1,1,unbound,wal,1,1,wal12b,WAL11.3D
-540bee04640f,1,1,unbound,wal,1,1,wal12b,WAL13.3D
-3c00ee0400e0,1,1,unbound,wal,1,1,wal12b,WAL14.3D
-0080010000a0,1,1,unbound,wal,1,1,wal12b,WAL14.3D
-0700000000e0,1,1,unbound,wal,1,1,wal12b,WAL16.3D
-0000ffff6500,1,1,unbound,wal,1,1,wal12b,WAL16.3D
-0420ee041c00,1,1,unbound,wal,1,1,wal12b,WAL16.3D
+0000a8440000,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+0000a0c30000,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+480046040000,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+4c0046040000,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+feffab4a0100,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+3c000020feff,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+0c00fba5ffff,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+00000000fba5,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+50001e050000,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+3c00b8030000,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+0000eeb10200,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+540058050000,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+400046040000,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+0500aa040000,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+070058050000,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+280014020000,1,1,bound_family_unique,wal,1,1,wal12b,WAL10.3D
+e0ff7f3fee0f,1,1,bound_family_unique,wal,1,1,wal12b,WAL11.3D
+00e8a1be0000,1,1,bound_family_unique,wal,1,1,wal12b,WAL11.3D
+0405c2020000,1,1,bound_family_unique,wal,1,1,wal12b,WAL11.3D
+e0ff7f3fed0f,1,1,bound_family_unique,wal,1,1,wal12b,WAL11.3D
+402204058022,1,1,bound_family_unique,wal,1,1,wal12b,WAL11.3D
+dfffc7c46801,1,1,bound_family_unique,wal,1,1,wal12b,WAL11.3D
+540bee04640f,1,1,bound_family_unique,wal,1,1,wal12b,WAL13.3D
+3c00ee0400e0,1,1,bound_family_unique,wal,1,1,wal12b,WAL14.3D
+0080010000a0,1,1,bound_family_unique,wal,1,1,wal12b,WAL14.3D
+0700000000e0,1,1,bound_family_unique,wal,1,1,wal12b,WAL16.3D
+0000ffff6500,1,1,bound_family_unique,wal,1,1,wal12b,WAL16.3D
+0420ee041c00,1,1,bound_family_unique,wal,1,1,wal12b,WAL16.3D
 060096030000,1,1,unbound,zband,1,0,,ZBAND.3D
 2000f0010000,1,1,unbound,zband,1,0,,ZBAND.3D
 0c009c010000,1,1,unbound,zband,1,0,,ZBAND.3D
