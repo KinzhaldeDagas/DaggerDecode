@@ -203,6 +203,24 @@ static std::unordered_map<std::string, BsiPreviewTexture>& BsiTextureCache() {
     return s;
 }
 
+static std::vector<const battlespire::BsaArchive*>& TextureSourceArchives() {
+    static std::vector<const battlespire::BsaArchive*> s;
+    return s;
+}
+
+static void RefreshTextureSourceArchives(const std::vector<battlespire::BsaArchive>& archives) {
+    auto& out = TextureSourceArchives();
+    out.clear();
+    for (const auto& a : archives) {
+        std::wstring wn = a.sourcePath.filename().wstring();
+        for (auto& c : wn) c = (wchar_t)towlower(c);
+        if (wn == L"3d.bsa") continue;
+        if (wn.find(L"bsi") != std::wstring::npos || wn.find(L"img") != std::wstring::npos || wn.find(L"tex") != std::wstring::npos)
+            out.push_back(&a);
+    }
+}
+
+
 static bool TryDecodeBsiFromAnyOffset(const std::vector<uint8_t>& bytes, BsiPreviewTexture& out) {
     if (TryDecodeBsiPreviewTexture(bytes, out)) return true;
     for (size_t i = 0; i + 4 < bytes.size(); ++i) {
@@ -220,6 +238,7 @@ static const BsiPreviewTexture* TryGetTextureByStem(const std::string& stem) {
     if (it == cache.end()) {
         BsiPreviewTexture tex{};
         std::vector<uint8_t> bytes;
+
         std::ifstream tf("batspire/bsi_extracted/" + stem + ".BSI", std::ios::binary);
         if (tf) {
             tf.seekg(0, std::ios::end);
@@ -229,6 +248,20 @@ static const BsiPreviewTexture* TryGetTextureByStem(const std::string& stem) {
             if (n > 0) tf.read(reinterpret_cast<char*>(bytes.data()), (std::streamsize)n);
             TryDecodeBsiFromAnyOffset(bytes, tex);
         }
+
+        if (tex.indices.empty()) {
+            const std::string name = stem + ".BSI";
+            for (const auto* arc : TextureSourceArchives()) {
+                if (!arc) continue;
+                const auto* e = arc->FindEntryCaseInsensitive(name);
+                if (!e) continue;
+                std::wstring err;
+                std::vector<uint8_t> arcBytes;
+                if (!arc->ReadEntryData(*e, arcBytes, &err)) continue;
+                if (TryDecodeBsiFromAnyOffset(arcBytes, tex)) break;
+            }
+        }
+
         it = cache.insert({ stem, std::move(tex) }).first;
     }
     if (it->second.indices.empty()) return nullptr;
@@ -402,6 +435,10 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
 
     int w = rc.right - rc.left;
     int h = rc.bottom - rc.top;
+    if (w <= 1 || h <= 1) return;
+
+    std::vector<float> zBuffer;
+    zBuffer.assign(size_t(w) * size_t(h), 1.0e30f);
 
     HPEN penBox = CreatePen(PS_SOLID, 1, RGB(60, 180, 255));
     HPEN penPoint = CreatePen(PS_SOLID, 1, RGB(220, 220, 90));
@@ -424,6 +461,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
 
     struct DrawFace {
         std::vector<POINT> pts;
+        std::vector<float> depths;
         std::vector<POINT> uvs;
         std::array<uint8_t, 6> textureTag{};
         std::string textureStemHint;
@@ -458,6 +496,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         df.textureStemHint = face.textureStemHint;
         df.hasUvTexture = face.hasUvTexture;
         df.pts.reserve(face.worldPoints.size());
+        df.depths.reserve(face.worldPoints.size());
         if (face.hasUvTexture) df.uvs = face.uvs;
 
         float depthSum = 0.0f;
@@ -471,6 +510,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
             }
             depthSum += d;
             df.pts.push_back(p);
+            df.depths.push_back(d);
         }
 
         if (clipped || df.pts.size() < 3) continue;
@@ -488,6 +528,28 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
             for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
                 const POINT p0 = df.pts[0], p1 = df.pts[ti], p2 = df.pts[ti + 1];
                 const POINT t0 = df.uvs[0], t1 = df.uvs[ti], t2 = df.uvs[ti + 1];
+                const float z0 = df.depths[0], z1 = df.depths[ti], z2 = df.depths[ti + 1];
+
+                auto normalizeUv = [](float uv, int texDim) -> float {
+                    if (texDim <= 0) return uv;
+                    float lim = float(texDim) * 16.0f;
+                    if (fabsf(uv) > lim) uv /= 256.0f;
+                    return uv;
+                };
+
+                const float u0 = normalizeUv((float)t0.x, tex->width);
+                const float v0 = normalizeUv((float)t0.y, tex->height);
+                const float u1 = normalizeUv((float)t1.x, tex->width);
+                const float v1 = normalizeUv((float)t1.y, tex->height);
+                const float u2 = normalizeUv((float)t2.x, tex->width);
+                const float v2 = normalizeUv((float)t2.y, tex->height);
+
+                const float iz0 = 1.0f / std::max(0.01f, z0);
+                const float iz1 = 1.0f / std::max(0.01f, z1);
+                const float iz2 = 1.0f / std::max(0.01f, z2);
+                const float uiz0 = u0 * iz0, viz0 = v0 * iz0;
+                const float uiz1 = u1 * iz1, viz1 = v1 * iz1;
+                const float uiz2 = u2 * iz2, viz2 = v2 * iz2;
 
                 LONG triMinX = std::min(std::min(p0.x, p1.x), p2.x);
                 LONG triMaxX = std::max(std::max(p0.x, p1.x), p2.x);
@@ -498,9 +560,11 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                 int maxx = std::min(w - 1, (int)triMaxX);
                 int miny = std::max(0, (int)triMinY);
                 int maxy = std::min(h - 1, (int)triMaxY);
+                if (minx > maxx || miny > maxy) continue;
+                if ((maxx - minx) > w * 3 || (maxy - miny) > h * 3) continue;
 
                 float den = float((p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y));
-                if (fabsf(den) < 1e-5f) continue;
+                if (!std::isfinite(den) || fabsf(den) < 1e-5f) continue;
 
                 for (int y = miny; y <= maxy; ++y) {
                     for (int x = minx; x <= maxx; ++x) {
@@ -509,8 +573,21 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                         float w2 = 1.0f - w0 - w1;
                         if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
 
-                        float u = w0 * float(t0.x) + w1 * float(t1.x) + w2 * float(t2.x);
-                        float v = w0 * float(t0.y) + w1 * float(t1.y) + w2 * float(t2.y);
+                        float z = w0 * z0 + w1 * z1 + w2 * z2;
+                        if (!std::isfinite(z) || z < 0.01f) continue;
+
+                        size_t zidx = size_t(y) * size_t(w) + size_t(x);
+                        if (zidx >= zBuffer.size()) continue;
+                        if (z >= zBuffer[zidx]) continue;
+
+                        float iz = w0 * iz0 + w1 * iz1 + w2 * iz2;
+                        if (!std::isfinite(iz) || fabsf(iz) < 1e-8f) continue;
+
+                        float u = (w0 * uiz0 + w1 * uiz1 + w2 * uiz2) / iz;
+                        float v = (w0 * viz0 + w1 * viz1 + w2 * viz2) / iz;
+                        if (!std::isfinite(u) || !std::isfinite(v)) continue;
+
+                        zBuffer[zidx] = z;
                         SetPixelV(hdc, x, y, SampleTextureColor(*tex, u, v, s.bilinearSampling));
                     }
                 }
@@ -525,19 +602,53 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
             SelectObject(hdc, oldBrush);
             DeleteObject(facePen);
         }
-        else {
-            const COLORREF fill = df.color;
-            const COLORREF outline = RGB(GetRValue(df.color) / 2, GetGValue(df.color) / 2, GetBValue(df.color) / 2);
+        else if (df.pts.size() >= 3 && df.depths.size() == df.pts.size()) {
+            for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
+                const POINT p0 = df.pts[0], p1 = df.pts[ti], p2 = df.pts[ti + 1];
+                const float z0 = df.depths[0], z1 = df.depths[ti], z2 = df.depths[ti + 1];
 
+                LONG triMinX = std::min(std::min(p0.x, p1.x), p2.x);
+                LONG triMaxX = std::max(std::max(p0.x, p1.x), p2.x);
+                LONG triMinY = std::min(std::min(p0.y, p1.y), p2.y);
+                LONG triMaxY = std::max(std::max(p0.y, p1.y), p2.y);
+
+                int minx = std::max(0, (int)triMinX);
+                int maxx = std::min(w - 1, (int)triMaxX);
+                int miny = std::max(0, (int)triMinY);
+                int maxy = std::min(h - 1, (int)triMaxY);
+                if (minx > maxx || miny > maxy) continue;
+
+                float den = float((p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y));
+                if (!std::isfinite(den) || fabsf(den) < 1e-5f) continue;
+
+                for (int y = miny; y <= maxy; ++y) {
+                    for (int x = minx; x <= maxx; ++x) {
+                        float w0 = float((p1.y - p2.y) * (x - p2.x) + (p2.x - p1.x) * (y - p2.y)) / den;
+                        float w1 = float((p2.y - p0.y) * (x - p2.x) + (p0.x - p2.x) * (y - p2.y)) / den;
+                        float w2 = 1.0f - w0 - w1;
+                        if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
+
+                        float z = w0 * z0 + w1 * z1 + w2 * z2;
+                        if (!std::isfinite(z) || z < 0.01f) continue;
+
+                        size_t zidx = size_t(y) * size_t(w) + size_t(x);
+                        if (zidx >= zBuffer.size()) continue;
+                        if (z >= zBuffer[zidx]) continue;
+
+                        zBuffer[zidx] = z;
+                        SetPixelV(hdc, x, y, df.color);
+                    }
+                }
+            }
+
+            const COLORREF outline = RGB(GetRValue(df.color) / 2, GetGValue(df.color) / 2, GetBValue(df.color) / 2);
             HPEN facePen = CreatePen(PS_SOLID, 1, outline);
-            HBRUSH faceBrush = CreateSolidBrush(fill);
             HGDIOBJ oldPen = SelectObject(hdc, facePen);
-            HGDIOBJ oldBrush = SelectObject(hdc, faceBrush);
+            HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
             Polygon(hdc, df.pts.data(), (int)df.pts.size());
             SelectObject(hdc, oldPen);
             SelectObject(hdc, oldBrush);
             DeleteObject(facePen);
-            DeleteObject(faceBrush);
         }
     }
 
@@ -551,7 +662,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     DeleteObject(penBox);
     DeleteObject(penPoint);
 
-    std::wstring msg = s.scene->label + L"  models " + std::to_wstring(s.scene->resolvedInstances) + L"/" + std::to_wstring(s.scene->modelInstances) + L"  (WASD move, click+drag rotate, B toggle bilinear)";
+    std::wstring msg = s.scene->label + L"  models " + std::to_wstring(s.scene->resolvedInstances) + L"/" + std::to_wstring(s.scene->modelInstances) + L"  (WASD move, click+drag rotate, B toggle bilinear, z-tested perspective UV raster)";
     DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
 }
 
@@ -1607,6 +1718,8 @@ void MainWindow::SetStatus(const std::wstring& s) {
 
 void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const std::wstring& label) {
     if (!m_levelPreview || !IsWindow(m_levelPreview)) return;
+
+    RefreshTextureSourceArchives(m_bsaArchives);
 
     auto payload = std::make_unique<LevelPreviewScene>();
     payload->label = label;
