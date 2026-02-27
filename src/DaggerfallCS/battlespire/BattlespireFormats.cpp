@@ -392,65 +392,105 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
         std::vector<std::string> modelNames;
     };
 
+    auto readChunkString = [&](const uint8_t* data, uint32_t len) -> std::string {
+        if (!data || len == 0) return {};
+        size_t n = 0;
+        while (n < len && data[n] != '\0') ++n;
+        if (n == 0) return {};
+        return std::string(reinterpret_cast<const char*>(data), reinterpret_cast<const char*>(data) + n);
+    };
+
     auto parseLfil = [&](const uint8_t* payload, uint32_t len, ObjTemplateList& outList) {
         if (len < 260) return;
         size_t count = len / 260;
         outList.modelNames.reserve(outList.modelNames.size() + count);
         for (size_t i = 0; i < count; ++i) {
-            const char* src = reinterpret_cast<const char*>(payload + i * 260);
-            size_t n = 0;
-            while (n < 260 && src[n] != '\0') ++n;
-            if (n == 0) continue;
-            std::string model = normalizeModelName(std::string(src, src + n));
+            const uint8_t* src = payload + i * 260;
+            std::string model = normalizeModelName(readChunkString(src, 260));
             if (!model.empty()) outList.modelNames.push_back(std::move(model));
         }
     };
 
-    auto parseObjd = [&](const uint8_t* payload, uint32_t len, const ObjTemplateList& templates) {
+    auto parseObjd = [&](const uint8_t* payload, uint32_t len, const ObjTemplateList* templates) {
         Bs6ModelInstance inst{};
-        bool hasIdfi = false;
+        std::string dirName;
+        std::string fileName;
         bool idfiOutOfRange = false;
-        uint32_t idfiValue = 0;
+        int32_t idfiValue = -1;
 
-        size_t p = 0;
-        while (p + 8 <= len) {
-            const uint8_t* h = payload + p;
-            std::string name(reinterpret_cast<const char*>(h), reinterpret_cast<const char*>(h) + 4);
-            uint32_t clen = ReadU32(h + 4);
-            size_t next = p + 8 + size_t(clen);
-            if (next > len) break;
-            const uint8_t* c = payload + p + 8;
+        auto resolveFromTemplates = [&](int32_t idx) -> std::string {
+            if (!templates || templates->modelNames.empty()) return {};
+            if (idx >= 0 && size_t(idx) < templates->modelNames.size()) {
+                return normalizeModelName(templates->modelNames[size_t(idx)]);
+            }
+            // Some scene payloads appear to use 1-based template indices.
+            if (idx > 0 && size_t(idx - 1) < templates->modelNames.size()) {
+                return normalizeModelName(templates->modelNames[size_t(idx - 1)]);
+            }
+            return {};
+        };
 
-            if (name == "IDFI" && clen >= 4) {
-                idfiValue = ReadU32(c);
-                if (idfiValue < templates.modelNames.size()) {
-                    inst.modelName = normalizeModelName(templates.modelNames[idfiValue]);
-                    hasIdfi = !inst.modelName.empty();
-                } else {
-                    idfiOutOfRange = true;
+        std::function<void(const uint8_t*, size_t)> scanObjd;
+        scanObjd = [&](const uint8_t* block, size_t blockLen) {
+            size_t p = 0;
+            while (p + 8 <= blockLen) {
+                const uint8_t* h = block + p;
+                std::string name(reinterpret_cast<const char*>(h), reinterpret_cast<const char*>(h) + 4);
+                uint32_t clen = ReadU32(h + 4);
+                size_t next = p + 8 + size_t(clen);
+                if (next > blockLen) break;
+                const uint8_t* c = block + p + 8;
+
+                if (name == "IDFI" && clen >= 4) {
+                    idfiValue = readI32(c);
+                    std::string resolved = resolveFromTemplates(idfiValue);
+                    if (!resolved.empty()) {
+                        inst.modelName = std::move(resolved);
+                    }
+                    else {
+                        idfiOutOfRange = true;
+                    }
                 }
-            }
-            else if (name == "POSI" && clen >= 12) {
-                inst.position = { readI32(c + 0), readI32(c + 4), readI32(c + 8) };
-            }
-            else if (name == "ANGS" && clen >= 12) {
-                inst.angles = { readI32(c + 0), readI32(c + 4), readI32(c + 8) };
-            }
-            else if (name == "SCAL" && clen >= 4) {
-                inst.scale = readI32(c);
-                if (inst.scale == 0) inst.scale = 1024;
-            }
+                else if (name == "FILN") {
+                    fileName = readChunkString(c, clen);
+                }
+                else if (name == "DIRN") {
+                    dirName = readChunkString(c, clen);
+                }
+                else if (name == "POSI" && clen >= 12) {
+                    inst.position = { readI32(c + 0), readI32(c + 4), readI32(c + 8) };
+                }
+                else if (name == "ANGS" && clen >= 12) {
+                    inst.angles = { readI32(c + 0), readI32(c + 4), readI32(c + 8) };
+                }
+                else if (name == "SCAL" && clen >= 4) {
+                    inst.scale = readI32(c);
+                    if (inst.scale == 0) inst.scale = 1024;
+                }
 
-            p = next;
+                if (name == "OBJD" || name == "OBJS") {
+                    scanObjd(c, clen);
+                }
+
+                p = next;
+            }
+        };
+
+        scanObjd(payload, len);
+
+        if (inst.modelName.empty() && !fileName.empty()) {
+            std::string joined = fileName;
+            if (!dirName.empty()) joined = dirName + "/" + fileName;
+            inst.modelName = normalizeModelName(joined);
         }
 
-        if (hasIdfi && !inst.modelName.empty()) {
+        if (!inst.modelName.empty()) {
             out.models.push_back(std::move(inst));
-        } else if (idfiOutOfRange) {
+        }
+        else if (idfiOutOfRange && idfiValue >= 0) {
             out.unresolvedModelNames.push_back("idfi:" + std::to_string(idfiValue));
         }
     };
-
     int64_t ambientSum = 0;
     int64_t brightnessSum = 0;
 
@@ -474,8 +514,8 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
         }
 
         size_t p = start;
-        ObjTemplateList localTemplates;
-        ObjTemplateList* activeTemplates = inheritedTemplates;
+        ObjTemplateList localTemplates = inheritedTemplates ? *inheritedTemplates : ObjTemplateList{};
+        ObjTemplateList* activeTemplates = &localTemplates;
 
         while (p + 8 <= end) {
             if (++parsedChunkCount > kMaxChunkCount) {
@@ -546,8 +586,8 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
                 parseLfil(payload, len, localTemplates);
                 activeTemplates = &localTemplates;
             }
-            else if (name == "OBJD" && activeTemplates) {
-                parseObjd(payload, len, *activeTemplates);
+            else if (name == "OBJD") {
+                parseObjd(payload, len, activeTemplates);
             }
 
             if (groupNames.find(name) != groupNames.end()) {
