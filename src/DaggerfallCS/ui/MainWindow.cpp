@@ -725,6 +725,7 @@ static constexpr float kLevelPreviewNearZ = 24.0f;
 static constexpr float kLevelPreviewFarZ = 200000.0f;
 static constexpr float kLevelPreviewDrawDistanceStep = 2000.0f;
 static constexpr float kLevelPreviewDrawDistanceMin = 2000.0f;
+static constexpr float kLevelPreviewTargetFps = 30.0f;
 
 static COLORREF ModulateColor(COLORREF c, float lightScale) {
     const float s = std::clamp(lightScale, 0.0f, 2.0f);
@@ -869,6 +870,15 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     auto& colorBuffer = s.backBuffer.color;
     auto& zBuffer = s.backBuffer.depth;
     int pixelStep = 1;
+    if (s.renderDirectX) {
+        if (s.fps > 0.0f && s.fps < kLevelPreviewTargetFps - 6.0f) pixelStep = 3;
+        else if (s.fps > 0.0f && s.fps < kLevelPreviewTargetFps - 2.0f) pixelStep = 2;
+        else if (s.scene->modelFaces.size() > 14000) pixelStep = 2;
+    }
+
+    const float focal = (float)std::min(w, h) * 0.7f;
+    const float halfW = float(w) * 0.5f;
+    const float halfH = float(h) * 0.5f;
 
     auto toBgr32 = [](COLORREF c) -> uint32_t {
         return (uint32_t(GetRValue(c)) << 16) | (uint32_t(GetGValue(c)) << 8) | uint32_t(GetBValue(c));
@@ -950,13 +960,12 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         bool projectedAny = false;
         for (const auto& pv : poly) {
             if (!std::isfinite(pv.x) || !std::isfinite(pv.y) || !std::isfinite(pv.z)) continue;
-            float focal = (float)std::min(w, h) * 0.7f;
             float sx = (pv.x / pv.z) * focal;
             float syProj = (pv.y / pv.z) * focal;
             if (!std::isfinite(sx) || !std::isfinite(syProj)) continue;
             POINT p{};
-            p.x = int(w * 0.5f + sx);
-            p.y = int(h * 0.5f - syProj);
+            p.x = int(halfW + sx);
+            p.y = int(halfH - syProj);
 
             float d = pv.z;
             depthSum += d;
@@ -975,6 +984,10 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         df.avgDepth = depthSum / (float)df.pts.size();
         drawFaces.push_back(std::move(df));
     }
+
+    std::sort(drawFaces.begin(), drawFaces.end(), [](const DrawFace& a, const DrawFace& b) {
+        return a.avgDepth < b.avgDepth;
+    });
 
     for (const auto& df : drawFaces) {
         const auto* tex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForFace(df.textureTag, df.textureStemHint) : nullptr;
@@ -1080,13 +1093,16 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
 
                 float den = float((p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y));
                 if (!std::isfinite(den) || fabsf(den) < 1e-5f) continue;
+                const float invDen = 1.0f / den;
+                const COLORREF litColor = s.renderDirectX ? ModulateColor(df.color, df.lightScale) : df.color;
+                const uint32_t lit = toBgr32(litColor);
 
                 const int triArea = (maxx - minx + 1) * (maxy - miny + 1);
                 if (triArea > (w * h * 3) / 4) continue;
                 for (int y = miny; y <= maxy; y += pixelStep) {
                     for (int x = minx; x <= maxx; x += pixelStep) {
-                        float w0 = float((p1.y - p2.y) * (x - p2.x) + (p2.x - p1.x) * (y - p2.y)) / den;
-                        float w1 = float((p2.y - p0.y) * (x - p2.x) + (p0.x - p2.x) * (y - p2.y)) / den;
+                        float w0 = float((p1.y - p2.y) * (x - p2.x) + (p2.x - p1.x) * (y - p2.y)) * invDen;
+                        float w1 = float((p2.y - p0.y) * (x - p2.x) + (p0.x - p2.x) * (y - p2.y)) * invDen;
                         float w2 = 1.0f - w0 - w1;
                         if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
 
@@ -1097,8 +1113,6 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                         if (zidx >= zBuffer.size()) continue;
                         if (z >= zBuffer[zidx]) continue;
 
-                        COLORREF flatColor = s.renderDirectX ? ModulateColor(df.color, df.lightScale) : df.color;
-                        uint32_t flat = toBgr32(flatColor);
                         for (int oy = 0; oy < pixelStep; ++oy) {
                             int py = y + oy;
                             if (py > maxy || py >= h) break;
@@ -1108,7 +1122,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                                 size_t pidx = size_t(py) * size_t(w) + size_t(px);
                                 if (pidx >= zBuffer.size()) continue;
                                 zBuffer[pidx] = z;
-                                colorBuffer[pidx] = flat;
+                                colorBuffer[pidx] = lit;
                             }
                         }
                     }
