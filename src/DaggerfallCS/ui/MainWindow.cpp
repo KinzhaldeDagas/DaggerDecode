@@ -592,9 +592,14 @@ static constexpr UINT IDM_BSA_ENTRY_SPEAK = 42002;
 
 static constexpr UINT WM_LVL_SET_SCENE = WM_APP + 120;
 
+struct PreviewUv {
+    float u{};
+    float v{};
+};
+
 struct PreviewFace {
     std::vector<battlespire::Int3> worldPoints;
-    std::vector<POINT> uvs;
+    std::vector<PreviewUv> uvs;
     std::array<uint8_t, 6> textureTag{};
     std::string textureStemHint;
     bool hasUvTexture{ false };
@@ -726,10 +731,6 @@ static void DrawTextBottomRight(HDC hdc, RECT rc, const std::wstring& text, COLO
     DrawTextW(hdc, text.c_str(), -1, &tr, DT_RIGHT | DT_BOTTOM | DT_SINGLELINE);
 }
 
-static bool IsMovementInputActive(const LevelPreviewState& s) {
-    return s.keys['W'] || s.keys['A'] || s.keys['S'] || s.keys['D'] || s.keys['Q'] || s.keys['E'] || ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0);
-}
-
 static bool TransformToView(const LevelPreviewState& s, float x, float y, float z, float& outX, float& outY, float& outZ) {
     float dx = x - s.camX;
     float dy = y - s.camY;
@@ -803,7 +804,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     struct DrawFace {
         std::vector<POINT> pts;
         std::vector<float> depths;
-        std::vector<POINT> uvs;
+        std::vector<PreviewUv> uvs;
         std::array<uint8_t, 6> textureTag{};
         std::string textureStemHint;
         bool hasUvTexture{ false };
@@ -836,8 +837,8 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
             pv.y = vy;
             pv.z = vz;
             if (face.hasUvTexture && i < face.uvs.size()) {
-                pv.u = (float)face.uvs[i].x;
-                pv.v = (float)face.uvs[i].y;
+                pv.u = face.uvs[i].u;
+                pv.v = face.uvs[i].v;
             }
             poly.push_back(pv);
         }
@@ -869,7 +870,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
             projectedAny = true;
             df.pts.push_back(p);
             df.depths.push_back(d);
-            if (face.hasUvTexture) df.uvs.push_back({ (LONG)pv.u, (LONG)pv.v });
+            if (face.hasUvTexture) df.uvs.push_back({ pv.u, pv.v });
         }
 
         if (df.pts.size() < 3) continue;
@@ -887,22 +888,24 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         if (tex && df.pts.size() >= 3) {
             for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
                 const POINT p0 = df.pts[0], p1 = df.pts[ti], p2 = df.pts[ti + 1];
-                const POINT t0 = df.uvs[0], t1 = df.uvs[ti], t2 = df.uvs[ti + 1];
+                const PreviewUv t0 = df.uvs[0], t1 = df.uvs[ti], t2 = df.uvs[ti + 1];
                 const float z0 = df.depths[0], z1 = df.depths[ti], z2 = df.depths[ti + 1];
 
                 auto normalizeUv = [](float uv, int texDim) -> float {
-                    if (texDim <= 0) return uv;
-                    float lim = float(texDim) * 16.0f;
-                    if (fabsf(uv) > lim) uv /= 256.0f;
+                    if (!std::isfinite(uv) || texDim <= 0) return 0.0f;
+                    const float dim = (float)texDim;
+                    const float absUv = fabsf(uv);
+                    if (absUv > dim * 64.0f) uv /= 256.0f;      // 8.8 fixed-point style
+                    else if (absUv > dim * 4.0f) uv /= 16.0f;   // 4.4 / legacy packed scale
                     return uv;
                 };
 
-                const float u0 = normalizeUv((float)t0.x, tex->width);
-                const float v0 = normalizeUv((float)t0.y, tex->height);
-                const float u1 = normalizeUv((float)t1.x, tex->width);
-                const float v1 = normalizeUv((float)t1.y, tex->height);
-                const float u2 = normalizeUv((float)t2.x, tex->width);
-                const float v2 = normalizeUv((float)t2.y, tex->height);
+                const float u0 = normalizeUv(t0.u, tex->width);
+                const float v0 = normalizeUv(t0.v, tex->height);
+                const float u1 = normalizeUv(t1.u, tex->width);
+                const float v1 = normalizeUv(t1.v, tex->height);
+                const float u2 = normalizeUv(t2.u, tex->width);
+                const float v2 = normalizeUv(t2.v, tex->height);
 
                 const float iz0 = 1.0f / std::max(0.01f, z0);
                 const float iz1 = 1.0f / std::max(0.01f, z1);
@@ -2363,7 +2366,7 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
                     pf.hasUvTexture = (face.uvs.size() == face.pointIndices.size() && !face.uvs.empty());
                     if (pf.hasUvTexture) {
                         pf.uvs.reserve(face.uvs.size());
-                        for (const auto& uv : face.uvs) pf.uvs.push_back({ (LONG)uv.u, (LONG)uv.v });
+                        for (const auto& uv : face.uvs) pf.uvs.push_back({ (float)uv.u, (float)uv.v });
                     }
                     for (uint32_t pi : face.pointIndices) {
                         if (pi >= mesh.points.size()) continue;
