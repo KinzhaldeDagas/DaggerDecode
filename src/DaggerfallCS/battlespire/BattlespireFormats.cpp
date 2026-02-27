@@ -430,55 +430,46 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
             return {};
         };
 
-        std::function<void(const uint8_t*, size_t)> scanObjd;
-        scanObjd = [&](const uint8_t* block, size_t blockLen) {
-            size_t p = 0;
-            while (p + 8 <= blockLen) {
-                const uint8_t* h = block + p;
-                std::string name(reinterpret_cast<const char*>(h), reinterpret_cast<const char*>(h) + 4);
-                uint32_t clen = ReadU32(h + 4);
-                size_t next = p + 8 + size_t(clen);
-                if (next > blockLen) break;
-                const uint8_t* c = block + p + 8;
+        size_t p = 0;
+        while (p + 8 <= len) {
+            const uint8_t* h = payload + p;
+            std::string name(reinterpret_cast<const char*>(h), reinterpret_cast<const char*>(h) + 4);
+            uint32_t clen = ReadU32(h + 4);
+            size_t next = p + 8 + size_t(clen);
+            if (next > len) break;
+            const uint8_t* c = payload + p + 8;
 
-                if (name == "IDFI" && clen >= 4) {
-                    idfiValue = readI32(c);
-                    std::string resolved = resolveFromTemplates(idfiValue);
-                    if (!resolved.empty()) {
-                        inst.modelName = std::move(resolved);
-                    }
-                    else {
-                        idfiOutOfRange = true;
-                    }
+            if (name == "IDFI" && clen >= 4) {
+                idfiValue = readI32(c);
+                std::string resolved = resolveFromTemplates(idfiValue);
+                if (!resolved.empty()) {
+                    inst.modelName = std::move(resolved);
                 }
-                else if (name == "FILN") {
-                    fileName = readChunkString(c, clen);
+                else {
+                    idfiOutOfRange = true;
                 }
-                else if (name == "DIRN") {
-                    dirName = readChunkString(c, clen);
-                }
-                else if (name == "POSI" && clen >= 12) {
-                    inst.position = { readI32(c + 0), readI32(c + 4), readI32(c + 8) };
-                }
-                else if (name == "ANGS" && clen >= 12) {
-                    inst.angles = { readI32(c + 0), readI32(c + 4), readI32(c + 8) };
-                }
-                else if (name == "SCAL" && clen >= 4) {
-                    inst.scale = readI32(c);
-                    if (inst.scale == 0) inst.scale = 1024;
-                }
-
-                if (name == "OBJD" || name == "OBJS") {
-                    scanObjd(c, clen);
-                }
-
-                p = next;
             }
-        };
+            else if (name == "FILN" || name == "NAME") {
+                fileName = readChunkString(c, clen);
+            }
+            else if (name == "DIRN") {
+                dirName = readChunkString(c, clen);
+            }
+            else if (name == "POSI" && clen >= 12) {
+                inst.position = { readI32(c + 0), readI32(c + 4), readI32(c + 8) };
+            }
+            else if (name == "ANGS" && clen >= 12) {
+                inst.angles = { readI32(c + 0), readI32(c + 4), readI32(c + 8) };
+            }
+            else if (name == "SCAL" && clen >= 4) {
+                inst.scale = readI32(c);
+                if (inst.scale == 0) inst.scale = 1024;
+            }
 
-        scanObjd(payload, len);
+            p = next;
+        }
 
-        if (inst.modelName.empty() && !fileName.empty()) {
+        if (!fileName.empty()) {
             std::string joined = fileName;
             if (!dirName.empty()) joined = dirName + "/" + fileName;
             inst.modelName = normalizeModelName(joined);
@@ -507,7 +498,7 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
     static constexpr size_t kMaxWalkDepth = 64;
     size_t parsedChunkCount = 0;
 
-    std::function<bool(size_t, size_t, ObjTemplateList*, size_t)> walk = [&](size_t start, size_t end, ObjTemplateList* inheritedTemplates, size_t depth) -> bool {
+    std::function<bool(size_t, size_t, ObjTemplateList*, size_t, bool)> walk = [&](size_t start, size_t end, ObjTemplateList* inheritedTemplates, size_t depth, bool inObjd) -> bool {
         if (depth > kMaxWalkDepth) {
             if (err) *err = L"BS6 scene parse exceeded maximum nested chunk depth.";
             return false;
@@ -538,7 +529,7 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
 
             const uint8_t* payload = bytes.data() + p + 8;
             if (name == "POSI" && len >= 12) {
-                out.markers.push_back({ readI32(payload + 0), readI32(payload + 4), readI32(payload + 8) });
+                if (!inObjd) out.markers.push_back({ readI32(payload + 0), readI32(payload + 4), readI32(payload + 8) });
             }
             else if (name == "BBOX" && len >= 24) {
                 Bs6SceneBox b{};
@@ -593,7 +584,8 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
             if (groupNames.find(name) != groupNames.end()) {
                 ObjTemplateList* childTemplates = activeTemplates;
                 if (name == "OBJS") childTemplates = &localTemplates;
-                if (!walk(p + 8, next, childTemplates, depth + 1)) return false;
+                const bool childInObjd = inObjd || (name == "OBJD");
+                if (!walk(p + 8, next, childTemplates, depth + 1, childInObjd)) return false;
             }
 
             p = next;
@@ -607,7 +599,7 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
         return true;
     };
 
-    if (!walk(0, bytes.size(), nullptr, 0)) return false;
+    if (!walk(0, bytes.size(), nullptr, 0, false)) return false;
 
     if (!out.unresolvedModelNames.empty()) {
         std::sort(out.unresolvedModelNames.begin(), out.unresolvedModelNames.end());
