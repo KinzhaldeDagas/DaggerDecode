@@ -1,0 +1,116 @@
+{
+  "meta": {
+    "bs6_files": 45,
+    "distinct_texi_dirs": 1,
+    "models_3d": 2395,
+    "distinct_texture_tags": 4625
+  },
+  "top_texture_tags": [
+    {
+      "tag": "000000000000",
+      "face_count": 124302,
+      "model_count": 2188
+    },
+    {
+      "tag": "0000000000ff",
+      "face_count": 261,
+      "model_count": 38
+    },
+    {
+      "tag": "000000000001",
+      "face_count": 217,
+      "model_count": 42
+    },
+    {
+      "tag": "00ffffff0000",
+      "face_count": 108,
+      "model_count": 29
+    },
+    {
+      "tag": "000100000000",
+      "face_count": 102,
+      "model_count": 33
+    },
+    {
+      "tag": "070000000800",
+      "face_count": 97,
+      "model_count": 95
+    },
+    {
+      "tag": "0d0000000e00",
+      "face_count": 93,
+      "model_count": 91
+    },
+    {
+      "tag": "130000001400",
+      "face_count": 84,
+      "model_count": 82
+    },
+    {
+      "tag": "0000803f0000",
+      "face_count": 79,
+      "model_count": 45
+    },
+    {
+      "tag": "190000001a00",
+      "face_count": 78,
+      "model_count": 76
+    },
+    {
+      "tag": "000000800000",
+      "face_count": 74,
+      "model_count": 48
+    },
+    {
+      "tag": "1f0000002000",
+      "face_count": 69,
+      "model_count": 67
+    },
+    {
+      "tag": "250000002600",
+      "face_count": 59,
+      "model_count": 57
+    },
+    {
+      "tag": "0000e0ab0100",
+      "face_count": 58,
+      "model_count": 10
+    },
+    {
+      "tag": "008005000000",
+      "face_count": 54,
+      "model_count": 5
+    },
+    {
+      "tag": "010000000000",
+      "face_count": 53,
+      "model_count": 33
+    },
+    {
+      "tag": "3c00ee040000",
+      "face_count": 46,
+      "model_count": 46
+    },
+    {
+      "tag": "010000000100",
+      "face_count": 42,
+      "model_count": 19
+    },
+    {
+      "tag": "3c00ee040200",
+      "face_count": 40,
+      "model_count": 40
+    },
+    {
+      "tag": "2b0000002c00",
+      "face_count": 38,
+      "model_count": 36
+    }
+  ],
+  "top_texi_dirs": [
+    {
+      "dir": "e:\\projects\\batspire\\art\\tex_cels\\hicolor",
+      "count": 45
+    }
+  ]
+}
