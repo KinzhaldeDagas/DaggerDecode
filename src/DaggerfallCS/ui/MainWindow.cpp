@@ -334,9 +334,8 @@ static void RefreshTextureSourceArchives(const std::vector<battlespire::BsaArchi
     for (const auto& a : archives) {
         std::wstring wn = a.sourcePath.filename().wstring();
         for (auto& c : wn) c = (wchar_t)towlower(c);
-        if (wn == L"3d.bsa") continue;
-        if (wn.find(L"bsi") != std::wstring::npos || wn.find(L"img") != std::wstring::npos || wn.find(L"tex") != std::wstring::npos)
-            out.push_back(&a);
+        if (wn == L"3d.bsa" || wn == L"waves.bsa" || wn == L"txt.bsa") continue;
+        out.push_back(&a);
     }
 }
 
@@ -628,7 +627,7 @@ static bool IsMovementInputActive(const LevelPreviewState& s) {
     return s.keys['W'] || s.keys['A'] || s.keys['S'] || s.keys['D'] || s.keys['Q'] || s.keys['E'] || ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0);
 }
 
-static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, float y, float z, POINT& out) {
+static bool TransformToView(const LevelPreviewState& s, float x, float y, float z, float& outX, float& outY, float& outZ) {
     float dx = x - s.camX;
     float dy = y - s.camY;
     float dz = z - s.camZ;
@@ -642,10 +641,22 @@ static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, floa
     float z2 = sp * dy + cp * z1;
 
     if (!std::isfinite(x1) || !std::isfinite(y1) || !std::isfinite(z2)) return false;
-    if (z2 < 1.0f || z2 > 200000.0f) return false;
+    outX = x1;
+    outY = y1;
+    outZ = z2;
+    return true;
+}
+
+static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, float y, float z, POINT& out) {
+    float vx = 0.0f, vy = 0.0f, vz = 0.0f;
+    if (!TransformToView(s, x, y, z, vx, vy, vz)) return false;
+
+    if (vz < -64.0f || vz > 200000.0f) return false;
+    float safeZ = std::max(0.05f, vz);
+
     float focal = (float)std::min(w, h) * 0.7f;
-    float sx = (x1 / z2) * focal;
-    float syProj = (y1 / z2) * focal;
+    float sx = (vx / safeZ) * focal;
+    float syProj = (vy / safeZ) * focal;
     if (!std::isfinite(sx) || !std::isfinite(syProj)) return false;
     if (fabsf(sx) > 200000.0f || fabsf(syProj) > 200000.0f) return false;
     out.x = int(w * 0.5f + sx);
@@ -670,7 +681,13 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     auto& colorBuffer = s.backBuffer.color;
     auto& zBuffer = s.backBuffer.depth;
     bool movementActive = IsMovementInputActive(s);
-    const int pixelStep = movementActive ? 2 : 1;
+    int pixelStep = movementActive ? 2 : 1;
+    if (s.fps > 0.0f) {
+        if (s.fps < 10.0f) pixelStep = std::max(pixelStep, 5);
+        else if (s.fps < 18.0f) pixelStep = std::max(pixelStep, 4);
+        else if (s.fps < 24.0f) pixelStep = std::max(pixelStep, 3);
+        else if (s.fps < 30.0f) pixelStep = std::max(pixelStep, 2);
+    }
 
     auto toBgr32 = [](COLORREF c) -> uint32_t {
         return (uint32_t(GetRValue(c)) << 16) | (uint32_t(GetGValue(c)) << 8) | uint32_t(GetBValue(c));
@@ -701,18 +718,12 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     drawFaces.reserve(s.scene->modelFaces.size());
 
     auto depthFor = [&](float x, float y, float z, float& outDepth) -> bool {
-        float dx = x - s.camX;
-        float dy = y - s.camY;
-        float dz = z - s.camZ;
-        float cy = cosf(s.yaw), sy = sinf(s.yaw);
-        float cp = cosf(s.pitch), sp = sinf(s.pitch);
-        float x1 = cy * dx - sy * dz;
-        float z1 = sy * dx + cy * dz;
-        float y1 = cp * dy - sp * z1;
-        float z2 = sp * dy + cp * z1;
-        (void)x1; (void)y1;
-        outDepth = z2;
-        return z2 >= 1.0f;
+        float vx = 0.0f, vy = 0.0f, vz = 0.0f;
+        (void)vy;
+        if (!TransformToView(s, x, y, z, vx, vy, vz)) return false;
+        if (vz < -64.0f || vz > 200000.0f) return false;
+        outDepth = std::max(0.05f, vz);
+        return true;
     };
 
     for (const auto& face : s.scene->modelFaces) {
@@ -728,27 +739,25 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         if (face.hasUvTexture) df.uvs = face.uvs;
 
         float depthSum = 0.0f;
-        bool clipped = false;
         for (const auto& wp : face.worldPoints) {
             POINT p{};
             float d = 0.0f;
             if (!ProjectPoint(s, w, h, (float)wp.x, (float)wp.y, (float)wp.z, p) || !depthFor((float)wp.x, (float)wp.y, (float)wp.z, d)) {
-                clipped = true;
-                break;
+                continue;
             }
             depthSum += d;
             df.pts.push_back(p);
             df.depths.push_back(d);
         }
 
-        if (clipped || df.pts.size() < 3) continue;
+        if (df.pts.size() < 3) continue;
+        if (df.uvs.size() != df.pts.size()) {
+            df.hasUvTexture = false;
+            df.uvs.clear();
+        }
         df.avgDepth = depthSum / (float)df.pts.size();
         drawFaces.push_back(std::move(df));
     }
-
-    std::stable_sort(drawFaces.begin(), drawFaces.end(), [](const DrawFace& a, const DrawFace& b) {
-        return a.avgDepth > b.avgDepth;
-    });
 
     for (const auto& df : drawFaces) {
         const auto* tex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForFace(df.textureTag, df.textureStemHint) : nullptr;
