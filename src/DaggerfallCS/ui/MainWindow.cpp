@@ -436,9 +436,17 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     int w = rc.right - rc.left;
     int h = rc.bottom - rc.top;
     if (w <= 1 || h <= 1) return;
+    if (w * h > 2500000) return;
+
+    std::vector<uint32_t> colorBuffer;
+    colorBuffer.assign(size_t(w) * size_t(h), 0u);
 
     std::vector<float> zBuffer;
     zBuffer.assign(size_t(w) * size_t(h), 1.0e30f);
+
+    auto toBgr32 = [](COLORREF c) -> uint32_t {
+        return (uint32_t(GetRValue(c)) << 16) | (uint32_t(GetGValue(c)) << 8) | uint32_t(GetBValue(c));
+    };
 
     HPEN penBox = CreatePen(PS_SOLID, 1, RGB(60, 180, 255));
     HPEN penPoint = CreatePen(PS_SOLID, 1, RGB(220, 220, 90));
@@ -450,14 +458,6 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         MoveToEx(hdc, pa.x, pa.y, nullptr);
         LineTo(hdc, pb.x, pb.y);
     };
-
-    SelectObject(hdc, penBox);
-    for (const auto& box : s.scene->boxes) {
-        const auto& c = box.corners;
-        drawLine3(c[0], c[1]); drawLine3(c[0], c[2]); drawLine3(c[0], c[3]);
-        drawLine3(c[4], c[1]); drawLine3(c[4], c[2]); drawLine3(c[4], c[3]);
-        drawLine3(c[5], c[1]); drawLine3(c[5], c[2]); drawLine3(c[5], c[3]);
-    }
 
     struct DrawFace {
         std::vector<POINT> pts;
@@ -588,19 +588,10 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                         if (!std::isfinite(u) || !std::isfinite(v)) continue;
 
                         zBuffer[zidx] = z;
-                        SetPixelV(hdc, x, y, SampleTextureColor(*tex, u, v, s.bilinearSampling));
+                        colorBuffer[zidx] = toBgr32(SampleTextureColor(*tex, u, v, s.bilinearSampling));
                     }
                 }
             }
-
-            const COLORREF outline = RGB(GetRValue(df.color) / 3, GetGValue(df.color) / 3, GetBValue(df.color) / 3);
-            HPEN facePen = CreatePen(PS_SOLID, 1, outline);
-            HGDIOBJ oldPen = SelectObject(hdc, facePen);
-            HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
-            Polygon(hdc, df.pts.data(), (int)df.pts.size());
-            SelectObject(hdc, oldPen);
-            SelectObject(hdc, oldBrush);
-            DeleteObject(facePen);
         }
         else if (df.pts.size() >= 3 && df.depths.size() == df.pts.size()) {
             for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
@@ -636,20 +627,42 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                         if (z >= zBuffer[zidx]) continue;
 
                         zBuffer[zidx] = z;
-                        SetPixelV(hdc, x, y, df.color);
+                        colorBuffer[zidx] = toBgr32(df.color);
                     }
                 }
             }
-
-            const COLORREF outline = RGB(GetRValue(df.color) / 2, GetGValue(df.color) / 2, GetBValue(df.color) / 2);
-            HPEN facePen = CreatePen(PS_SOLID, 1, outline);
-            HGDIOBJ oldPen = SelectObject(hdc, facePen);
-            HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
-            Polygon(hdc, df.pts.data(), (int)df.pts.size());
-            SelectObject(hdc, oldPen);
-            SelectObject(hdc, oldBrush);
-            DeleteObject(facePen);
         }
+    }
+
+    BITMAPINFO bmi{};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = w;
+    bmi.bmiHeader.biHeight = -h;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+    SetDIBitsToDevice(hdc, 0, 0, (DWORD)w, (DWORD)h, 0, 0, 0, (UINT)h, colorBuffer.data(), &bmi, DIB_RGB_COLORS);
+
+    SelectObject(hdc, penBox);
+    for (const auto& box : s.scene->boxes) {
+        const auto& c = box.corners;
+        drawLine3(c[0], c[1]); drawLine3(c[0], c[2]); drawLine3(c[0], c[3]);
+        drawLine3(c[4], c[1]); drawLine3(c[4], c[2]); drawLine3(c[4], c[3]);
+        drawLine3(c[5], c[1]); drawLine3(c[5], c[2]); drawLine3(c[5], c[3]);
+    }
+
+    for (const auto& df : drawFaces) {
+        if (df.pts.size() < 3) continue;
+        const COLORREF outline = (df.hasUvTexture && df.uvs.size() == df.pts.size())
+            ? RGB(GetRValue(df.color) / 3, GetGValue(df.color) / 3, GetBValue(df.color) / 3)
+            : RGB(GetRValue(df.color) / 2, GetGValue(df.color) / 2, GetBValue(df.color) / 2);
+        HPEN facePen = CreatePen(PS_SOLID, 1, outline);
+        HGDIOBJ oldPen = SelectObject(hdc, facePen);
+        HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+        Polygon(hdc, df.pts.data(), (int)df.pts.size());
+        SelectObject(hdc, oldPen);
+        SelectObject(hdc, oldBrush);
+        DeleteObject(facePen);
     }
 
     SelectObject(hdc, penPoint);
@@ -662,7 +675,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     DeleteObject(penBox);
     DeleteObject(penPoint);
 
-    std::wstring msg = s.scene->label + L"  models " + std::to_wstring(s.scene->resolvedInstances) + L"/" + std::to_wstring(s.scene->modelInstances) + L"  (WASD move, click+drag rotate, B toggle bilinear, z-tested perspective UV raster)";
+    std::wstring msg = s.scene->label + L"  models " + std::to_wstring(s.scene->resolvedInstances) + L"/" + std::to_wstring(s.scene->modelInstances) + L"  (WASD move, click+drag rotate, B toggle bilinear, z-tested perspective UV raster, event-driven redraw)";
     DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
 }
 
@@ -702,7 +715,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         return 0;
     case WM_KEYDOWN:
         if (s && wParam < s->keys.size()) s->keys[wParam] = true;
-        if (s && (wParam == 'B' || wParam == 'b')) s->bilinearSampling = !s->bilinearSampling;
+        if (s && (wParam == 'B' || wParam == 'b')) { s->bilinearSampling = !s->bilinearSampling; InvalidateRect(hwnd, nullptr, FALSE); }
         return 0;
     case WM_KEYUP:
         if (s && wParam < s->keys.size()) s->keys[wParam] = false;
@@ -739,11 +752,12 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         if (s) {
             float speed = 50.0f;
             float fy = cosf(s->yaw), fx = sinf(s->yaw);
-            if (s->keys['W']) { s->camX += fx * speed; s->camZ += fy * speed; }
-            if (s->keys['S']) { s->camX -= fx * speed; s->camZ -= fy * speed; }
-            if (s->keys['A']) { s->camX -= fy * speed; s->camZ += fx * speed; }
-            if (s->keys['D']) { s->camX += fy * speed; s->camZ -= fx * speed; }
-            InvalidateRect(hwnd, nullptr, FALSE);
+            bool moved = false;
+            if (s->keys['W']) { s->camX += fx * speed; s->camZ += fy * speed; moved = true; }
+            if (s->keys['S']) { s->camX -= fx * speed; s->camZ -= fy * speed; moved = true; }
+            if (s->keys['A']) { s->camX -= fy * speed; s->camZ += fx * speed; moved = true; }
+            if (s->keys['D']) { s->camX += fy * speed; s->camZ -= fx * speed; moved = true; }
+            if (moved) InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
     case WM_ERASEBKGND:
