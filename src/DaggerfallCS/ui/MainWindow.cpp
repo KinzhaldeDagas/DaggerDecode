@@ -191,6 +191,39 @@ static bool IsLikelyUtf8Printable(const std::vector<uint8_t>& bytes) {
     return control * 8 < sample;
 }
 
+
+static std::wstring BuildBs6SummaryPreview(const battlespire::Bs6FileSummary& s) {
+    std::wstring out = L"BS6 level summary\r\n";
+    out += L"Chunks: " + std::to_wstring(s.chunks.size()) + L"\r\n\r\n";
+    const size_t show = std::min<size_t>(s.chunks.size(), 128);
+    for (size_t i = 0; i < show; ++i) {
+        wchar_t line[256]{};
+        std::wstring name = winutil::WidenUtf8(s.chunks[i].name);
+        swprintf_s(line, L"%03zu  %s  len=%u\r\n", i, name.c_str(), (unsigned)s.chunks[i].length);
+        out += line;
+    }
+    if (s.chunks.size() > show) out += L"...\r\n";
+    return out;
+}
+
+static std::wstring BuildB3dSummaryPreview(const battlespire::B3dFileSummary& s) {
+    std::wstring out = L"3D model summary\r\n";
+    out += L"Version: ";
+    out += winutil::WidenUtf8(s.version);
+    out += L"\r\n";
+    out += L"Points: " + std::to_wstring(s.pointCount) + L"\r\n";
+    out += L"Planes: " + std::to_wstring(s.planeCount) + L"\r\n";
+    out += L"Objects: " + std::to_wstring(s.objectCount) + L"\r\n";
+    out += L"Radius: " + std::to_wstring(s.radius) + L"\r\n\r\n";
+
+    wchar_t line[128]{};
+    swprintf_s(line, L"pointListOffset: 0x%X\r\n", (unsigned)s.pointListOffset); out += line;
+    swprintf_s(line, L"normalListOffset: 0x%X\r\n", (unsigned)s.normalListOffset); out += line;
+    swprintf_s(line, L"planeDataOffset: 0x%X\r\n", (unsigned)s.planeDataOffset); out += line;
+    swprintf_s(line, L"planeListOffset: 0x%X\r\n", (unsigned)s.planeListOffset); out += line;
+    return out;
+}
+
 static std::wstring HexDumpPreview(const std::vector<uint8_t>& bytes, size_t maxBytes = 256) {
     std::wstring out;
     size_t n = std::min(bytes.size(), maxBytes);
@@ -1049,6 +1082,8 @@ void MainWindow::StartTreeBuild() {
             };
 
             const bool isFlcBsa = (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"FLC.BSA") == 0);
+            const bool isBs6Bsa = (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"BS6.BSA") == 0);
+            const bool is3dBsa = (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"3D.BSA") == 0);
             if (isFlcBsa) {
                 std::vector<size_t> dialogueFlc;
                 std::vector<size_t> otherFlc;
@@ -1082,6 +1117,29 @@ void MainWindow::StartTreeBuild() {
 
                 insCat(L"Dialogue Voice Clips", dialogueFlc);
                 insCat(L"Other FLC Audio", otherFlc);
+                continue;
+            }
+
+            if (isBs6Bsa || is3dBsa) {
+                std::vector<size_t> sorted;
+                sorted.reserve(a.entries.size());
+                for (size_t ei = 0; ei < a.entries.size(); ++ei) sorted.push_back(ei);
+                std::stable_sort(sorted.begin(), sorted.end(), [&](size_t lhs, size_t rhs) {
+                    std::wstring ln = BaseNameOnly(winutil::WidenUtf8(a.entries[lhs].name));
+                    std::wstring rn = BaseNameOnly(winutil::WidenUtf8(a.entries[rhs].name));
+                    return ln < rn;
+                });
+
+                std::wstring cat = isBs6Bsa ? L"Level Files (.BS6)" : L"Model Files (.3D)";
+                cat += L" (" + std::to_wstring(sorted.size()) + L")";
+
+                TVINSERTSTRUCTW cins{};
+                cins.hParent = ah;
+                cins.hInsertAfter = TVI_LAST;
+                cins.item.mask = TVIF_TEXT;
+                cins.item.pszText = const_cast<wchar_t*>(cat.c_str());
+                HTREEITEM ch = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&cins);
+                for (size_t ei : sorted) insertEntryNode(ch, ei);
                 continue;
             }
 
@@ -1808,6 +1866,29 @@ void MainWindow::OnTreeSelChanged() {
 
         std::wstring preview;
         bool renderedTable = false;
+
+        std::wstring entryNameLower = ToLowerWs(winutil::WidenUtf8(e.name));
+        bool looksLikeBs6 = EndsWithWs(entryNameLower, L".bs6");
+        bool looksLike3d = EndsWithWs(entryNameLower, L".3d");
+        if (looksLikeBs6) {
+            battlespire::Bs6FileSummary bs6;
+            std::wstring perr;
+            if (battlespire::Bs6FileSummary::TrySummarize(bytes, bs6, &perr)) {
+                SetWindowTextW(m_preview, BuildBs6SummaryPreview(bs6).c_str());
+                m_viewMode = ViewMode::BsaEntry;
+                return;
+            }
+        }
+        else if (looksLike3d) {
+            battlespire::B3dFileSummary b3d;
+            std::wstring perr;
+            if (battlespire::B3dFileSummary::TryParse(bytes, b3d, &perr)) {
+                SetWindowTextW(m_preview, BuildB3dSummaryPreview(b3d).c_str());
+                m_viewMode = ViewMode::BsaEntry;
+                return;
+            }
+        }
+
         if (IsLikelyUtf8Printable(bytes)) {
             std::wstring nameLow = ToLowerWs(winutil::WidenUtf8(e.name));
             std::string text(bytes.begin(), bytes.end());
