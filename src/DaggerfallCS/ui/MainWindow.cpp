@@ -165,6 +165,16 @@ struct B3dResearchBounds {
     std::unordered_set<std::string> knownFiles;
 };
 
+struct Bs6ResearchBounds {
+    bool loaded{ false };
+    int32_t scaleMin{ 1024 };
+    int32_t scaleMax{ 1024 };
+    std::array<int32_t, 3> posMin{ { -32768, -32768, -32768 } };
+    std::array<int32_t, 3> posMax{ { 32768, 32768, 32768 } };
+    std::array<int32_t, 3> angMin{ { 0, 0, 0 } };
+    std::array<int32_t, 3> angMax{ { 2047, 2047, 2047 } };
+};
+
 static B3dResearchBounds LoadB3dResearchBounds() {
     B3dResearchBounds out{};
     std::ifstream f("batspire/research_phase1/b3d_diagnostics.csv", std::ios::binary);
@@ -205,6 +215,98 @@ static B3dResearchBounds LoadB3dResearchBounds() {
 
 static const B3dResearchBounds& GetB3dResearchBounds() {
     static const B3dResearchBounds s = LoadB3dResearchBounds();
+    return s;
+}
+
+static Bs6ResearchBounds LoadBs6ResearchBounds() {
+    Bs6ResearchBounds out{};
+    std::ifstream f("batspire/research_phase1/bs6_diagnostics.csv", std::ios::binary);
+    if (!f) return out;
+
+    std::string headerLine;
+    if (!std::getline(f, headerLine) || headerLine.empty()) return out;
+
+    std::vector<std::string> headers;
+    {
+        std::string cur;
+        for (char c : headerLine) {
+            if (c == ',') {
+                headers.push_back(cur);
+                cur.clear();
+            }
+            else if (c != '\r' && c != '\n') {
+                cur.push_back(c);
+            }
+        }
+        headers.push_back(cur);
+    }
+
+    std::unordered_map<std::string, size_t> col;
+    for (size_t i = 0; i < headers.size(); ++i) col[headers[i]] = i;
+
+    auto colValue = [&](const std::vector<std::string>& cols, const char* name, int32_t& dst) -> bool {
+        auto it = col.find(name);
+        if (it == col.end() || it->second >= cols.size()) return false;
+        try {
+            dst = (int32_t)std::stol(cols[it->second]);
+            return true;
+        }
+        catch (...) {
+            return false;
+        }
+    };
+
+    bool anyRow = false;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        std::vector<std::string> cols;
+        std::string cur;
+        for (char c : line) {
+            if (c == ',') {
+                cols.push_back(cur);
+                cur.clear();
+            }
+            else if (c != '\r' && c != '\n') {
+                cur.push_back(c);
+            }
+        }
+        cols.push_back(cur);
+
+        int32_t v{};
+        if (colValue(cols, "scale_min", v)) out.scaleMin = anyRow ? std::min(out.scaleMin, v) : v;
+        if (colValue(cols, "scale_max", v)) out.scaleMax = anyRow ? std::max(out.scaleMax, v) : v;
+
+        const char* pmin[3] = { "pos_x_min", "pos_y_min", "pos_z_min" };
+        const char* pmax[3] = { "pos_x_max", "pos_y_max", "pos_z_max" };
+        const char* amin[3] = { "ang_x_min", "ang_y_min", "ang_z_min" };
+        const char* amax[3] = { "ang_x_max", "ang_y_max", "ang_z_max" };
+        for (size_t i = 0; i < 3; ++i) {
+            if (colValue(cols, pmin[i], v)) out.posMin[i] = anyRow ? std::min(out.posMin[i], v) : v;
+            if (colValue(cols, pmax[i], v)) out.posMax[i] = anyRow ? std::max(out.posMax[i], v) : v;
+            if (colValue(cols, amin[i], v)) out.angMin[i] = anyRow ? std::min(out.angMin[i], v) : v;
+            if (colValue(cols, amax[i], v)) out.angMax[i] = anyRow ? std::max(out.angMax[i], v) : v;
+        }
+        anyRow = true;
+    }
+
+    if (anyRow) {
+        out.loaded = true;
+        if (out.scaleMin <= 0 || out.scaleMax < out.scaleMin) {
+            out.scaleMin = 1024;
+            out.scaleMax = 1024;
+        }
+        for (size_t i = 0; i < 3; ++i) {
+            if (out.posMax[i] < out.posMin[i]) std::swap(out.posMin[i], out.posMax[i]);
+            if (out.angMax[i] < out.angMin[i]) std::swap(out.angMin[i], out.angMax[i]);
+        }
+    }
+
+    return out;
+}
+
+static const Bs6ResearchBounds& GetBs6ResearchBounds() {
+    static const Bs6ResearchBounds s = LoadBs6ResearchBounds();
     return s;
 }
 struct BsiPreviewTexture {
@@ -1304,6 +1406,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             int dy = p.y - s->lastMouse.y;
             s->lastMouse = p;
             s->yaw += dx * 0.005f;
+            s->yaw = std::remainderf(s->yaw, 6.28318530718f);
             s->pitch -= dy * 0.005f;
             if (s->pitch > 1.5f) s->pitch = 1.5f;
             if (s->pitch < -1.5f) s->pitch = -1.5f;
@@ -1331,6 +1434,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             if (s->keys['D']) { s->camX += fy * speed; s->camZ -= fx * speed; moved = true; }
             if (s->keys['Q']) { s->camY += speed; moved = true; }
             if (s->keys['E']) { s->camY -= speed; moved = true; }
+            s->yaw = std::remainderf(s->yaw, 6.28318530718f);
             if (moved || streamed) InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
@@ -2352,7 +2456,7 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
             float ambientNorm = std::clamp(float(payload->ambient) / 60000.0f, 0.0f, 1.0f);
             float brightnessNorm = std::clamp(float(payload->brightness) / 1023.0f, 0.0f, 1.0f);
             // Research-guided conservative blend; BRIT tracks LITD counts strongly and AMBI has broad variance.
-            float lightingScale = std::clamp(0.25f + 0.60f * brightnessNorm + 0.30f * ambientNorm, 0.20f, 1.20f);
+            float lightingScale = std::clamp((0.25f + 0.60f * brightnessNorm + 0.30f * ambientNorm) * 1.25f, 0.25f, 1.50f);
 
             auto applyLightScale = [&](COLORREF c) -> COLORREF {
                 int r = std::clamp(int(float(GetRValue(c)) * lightingScale), 0, 255);
@@ -2387,17 +2491,37 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
                 return applyLightScale(RGB(r, g, b));
             };
 
-            auto applyTransform = [](const battlespire::Int3& v, const battlespire::Bs6ModelInstance& inst, battlespire::Int3& out) -> bool {
+            const auto& bs6Research = GetBs6ResearchBounds();
+            auto applyTransform = [&](const battlespire::Int3& v, const battlespire::Bs6ModelInstance& inst, battlespire::Int3& out) -> bool {
                 const float kAngleScale = 6.28318530718f / 2048.0f;
                 const float kMaxCoord = 2000000.0f;
-                float sx = std::clamp((float)inst.scale / 1024.0f, -32.0f, 32.0f);
+
+                int32_t scaleRaw = inst.scale;
+                if (bs6Research.loaded) {
+                    scaleRaw = std::clamp(scaleRaw, bs6Research.scaleMin, bs6Research.scaleMax);
+                }
+                float sx = std::clamp((float)scaleRaw / 1024.0f, -32.0f, 32.0f);
                 float x = (float)v.x * sx;
                 float y = (float)v.y * sx;
                 float z = (float)v.z * sx;
 
-                float yaw = inst.angles.y * kAngleScale;
-                float pitch = inst.angles.x * kAngleScale;
-                float roll = inst.angles.z * kAngleScale;
+                int32_t pitchRaw = inst.angles.x;
+                int32_t yawRaw = inst.angles.y;
+                int32_t rollRaw = inst.angles.z;
+                if (bs6Research.loaded) {
+                    auto wrapAngle = [](int32_t a) -> int32_t {
+                        int32_t m = a % 2048;
+                        if (m < 0) m += 2048;
+                        return m;
+                    };
+                    pitchRaw = std::clamp(wrapAngle(pitchRaw), bs6Research.angMin[0], bs6Research.angMax[0]);
+                    yawRaw = std::clamp(wrapAngle(yawRaw), bs6Research.angMin[1], bs6Research.angMax[1]);
+                    rollRaw = std::clamp(wrapAngle(rollRaw), bs6Research.angMin[2], bs6Research.angMax[2]);
+                }
+
+                float yaw = yawRaw * kAngleScale;
+                float pitch = pitchRaw * kAngleScale;
+                float roll = rollRaw * kAngleScale;
 
                 float cy = cosf(yaw), sy = sinf(yaw);
                 float cp = cosf(pitch), sp = sinf(pitch);
@@ -2412,9 +2536,18 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
 
                 if (!std::isfinite(x3) || !std::isfinite(y3) || !std::isfinite(z2)) return false;
 
-                x3 += inst.position.x;
-                y3 += inst.position.y;
-                z2 += inst.position.z;
+                int32_t posX = inst.position.x;
+                int32_t posY = inst.position.y;
+                int32_t posZ = inst.position.z;
+                if (bs6Research.loaded) {
+                    posX = std::clamp(posX, bs6Research.posMin[0], bs6Research.posMax[0]);
+                    posY = std::clamp(posY, bs6Research.posMin[1], bs6Research.posMax[1]);
+                    posZ = std::clamp(posZ, bs6Research.posMin[2], bs6Research.posMax[2]);
+                }
+
+                x3 += posX;
+                y3 += posY;
+                z2 += posZ;
                 if (fabsf(x3) > kMaxCoord || fabsf(y3) > kMaxCoord || fabsf(z2) > kMaxCoord) return false;
 
                 out.x = (int32_t)std::lround(x3);
@@ -2515,28 +2648,36 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
 
                 payload->resolvedInstances++;
                 const auto& mesh = mit->second;
+                std::string modelKeyStem = NormalizeTextureStem(modelKey);
+                const std::string& textureStemHint = (!modelKeyStem.empty() && b3dResearch.knownFiles.find(modelKeyStem) != b3dResearch.knownFiles.end())
+                    ? modelKeyStem
+                    : modelStem;
+
+                std::vector<battlespire::Int3> transformedPoints;
+                transformedPoints.reserve(mesh.points.size());
+                std::vector<uint8_t> transformedValid;
+                transformedValid.resize(mesh.points.size(), 0);
+                for (size_t pointIndex = 0; pointIndex < mesh.points.size(); ++pointIndex) {
+                    battlespire::Int3 wp{};
+                    bool ok = applyTransform(mesh.points[pointIndex], inst, wp);
+                    transformedPoints.push_back(wp);
+                    transformedValid[pointIndex] = ok ? 1u : 0u;
+                }
+
                 for (const auto& face : mesh.faces) {
                     PreviewFace pf{};
                     pf.color = colorFromTextureTag(face.textureTag, modelStem);
                     pf.textureTag = face.textureTag;
-                    const auto& b3dResearch = GetB3dResearchBounds();
-                    std::string modelKeyStem = NormalizeTextureStem(modelKey);
-                    if (!modelKeyStem.empty() && b3dResearch.knownFiles.find(modelKeyStem) != b3dResearch.knownFiles.end()) {
-                        pf.textureStemHint = modelKeyStem;
-                    }
-                    else {
-                        pf.textureStemHint = modelStem;
-                    }
+                    pf.textureStemHint = textureStemHint;
                     pf.hasUvTexture = (face.uvs.size() == face.pointIndices.size() && !face.uvs.empty());
                     if (pf.hasUvTexture) {
                         pf.uvs.reserve(face.uvs.size());
                         for (const auto& uv : face.uvs) pf.uvs.push_back({ (float)uv.u, (float)uv.v });
                     }
+                    pf.worldPoints.reserve(face.pointIndices.size());
                     for (uint32_t pi : face.pointIndices) {
-                        if (pi >= mesh.points.size()) continue;
-                        battlespire::Int3 wp{};
-                        if (!applyTransform(mesh.points[pi], inst, wp)) continue;
-                        pf.worldPoints.push_back(wp);
+                        if (pi >= transformedPoints.size() || !transformedValid[pi]) continue;
+                        pf.worldPoints.push_back(transformedPoints[pi]);
                     }
                     if (pf.worldPoints.size() >= 3) {
                         payload->modelFaces.push_back(std::move(pf));
