@@ -180,6 +180,7 @@ private:
     void OnBsaDialogueListContextMenu(LPARAM lParam);
     bool BuildFlcSpeakTargetFromListClick(int row, int subItem, FlcSpeakTarget& out) const;
     void CmdSpeakBsaDialogueLine(const FlcSpeakTarget& target);
+    void CmdSpeakSelectedFlcEntry();
 
     void PopulateQuestStages(size_t questIdx);
     void PopulateQuestText(size_t questIdx);

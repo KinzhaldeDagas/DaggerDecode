@@ -29,6 +29,7 @@ static std::wstring ToLowerCopy(std::wstring s) {
 }
 
 static constexpr UINT IDM_BSA_DIALOGUE_SPEAK = 42001;
+static constexpr UINT IDM_BSA_ENTRY_SPEAK = 42002;
 
 
 struct DialogueCodeParts {
@@ -37,23 +38,18 @@ struct DialogueCodeParts {
 };
 
 static bool TryParseDialogueCodeParts(const std::wstring& rawCode, DialogueCodeParts& out) {
+    // Dialogue cells can include punctuation or full clip-like forms.
+    // Accept codes embedded anywhere like: DK92, DKTALK92, DK-WAIT-92.
     std::wstring code = rawCode;
-    auto issp = [](wchar_t c) { return c == L' ' || c == L'\t' || c == L'\r' || c == L'\n'; };
-    while (!code.empty() && issp(code.front())) code.erase(code.begin());
-    while (!code.empty() && issp(code.back())) code.pop_back();
-    if (code.size() < 4) return false;
     for (auto& c : code) c = (wchar_t)towupper(c);
 
-    if (!(code[0] >= L'A' && code[0] <= L'Z' && code[1] >= L'A' && code[1] <= L'Z')) return false;
+    std::wsmatch m;
+    static const std::wregex re(LR"(([A-Z]{2})(?:[^A-Z0-9]*(?:TALK|WAIT))?[^0-9]*(\d{1,3}))");
+    if (!std::regex_search(code, m, re)) return false;
 
-    size_t i = code.size();
-    while (i > 0 && code[i - 1] >= L'0' && code[i - 1] <= L'9') --i;
-    if (i >= code.size()) return false;
-
-    std::wstring tail = code.substr(i);
-    out.speaker = code.substr(0, 2);
-    out.terminalNumber = _wtoi(tail.c_str());
-    return true;
+    out.speaker = m[1].str();
+    out.terminalNumber = _wtoi(m[2].str().c_str());
+    return out.terminalNumber >= 0;
 }
 
 static bool TryParseFlcVariant(const std::wstring& name, std::wstring& speaker, std::wstring& mode, int& variant) {
@@ -2586,14 +2582,14 @@ void MainWindow::SetupListColumns_BsaTable(const std::vector<std::wstring>& head
 }
 
 void MainWindow::OnBsaDialogueListContextMenu(LPARAM lParam) {
-    if (m_viewMode != ViewMode::BsaEntry || m_bsaDialogueKind != BsaDialogueKind::Script) return;
+    if (m_viewMode != ViewMode::BsaEntry) return;
 
     POINT pt{};
     pt.x = GET_X_LPARAM(lParam);
     pt.y = GET_Y_LPARAM(lParam);
     if (pt.x == -1 && pt.y == -1) {
         int row = ListView_GetNextItem(m_list, -1, LVNI_SELECTED);
-        if (row < 0) return;
+        if (row < 0) row = 0;
         RECT rc{};
         if (!ListView_GetSubItemRect(m_list, row, 0, LVIR_BOUNDS, &rc)) return;
         pt.x = rc.left + 8;
@@ -2607,17 +2603,34 @@ void MainWindow::OnBsaDialogueListContextMenu(LPARAM lParam) {
     LVHITTESTINFO hit{};
     hit.pt = client;
     int row = ListView_SubItemHitTest(m_list, &hit);
-    if (row < 0 || hit.iSubItem < 0) return;
 
     FlcSpeakTarget target{};
-    if (!BuildFlcSpeakTargetFromListClick(row, hit.iSubItem, target)) return;
+    const bool hasDialogueSpeak = (m_bsaDialogueKind == BsaDialogueKind::Script && row >= 0 && hit.iSubItem >= 0 &&
+        BuildFlcSpeakTargetFromListClick(row, hit.iSubItem, target));
+
+    auto* p = GetSelectedPayload();
+    bool hasEntrySpeak = false;
+    if (p && p->kind == TreePayload::Kind::BsaEntry && p->bsaArchiveIndex < m_bsaArchives.size()) {
+        const auto& ar = m_bsaArchives[p->bsaArchiveIndex];
+        if (_wcsicmp(ar.sourcePath.filename().wstring().c_str(), L"FLC.BSA") == 0 && p->bsaEntryIndex < ar.entries.size()) {
+            std::wstring name = ToLowerWs(winutil::WidenUtf8(ar.entries[p->bsaEntryIndex].name));
+            hasEntrySpeak = EndsWithWs(name, L".flc");
+        }
+    }
+
+    if (!hasDialogueSpeak && !hasEntrySpeak) return;
 
     HMENU h = CreatePopupMenu();
     if (!h) return;
 
-    std::wstring label = L"Speak";
-    if (!target.code.empty()) label += L" (" + target.code + L")";
-    AppendMenuW(h, MF_STRING, IDM_BSA_DIALOGUE_SPEAK, label.c_str());
+    if (hasDialogueSpeak) {
+        std::wstring label = L"Speak";
+        if (!target.code.empty()) label += L" (" + target.code + L")";
+        AppendMenuW(h, MF_STRING, IDM_BSA_DIALOGUE_SPEAK, label.c_str());
+    }
+    if (hasEntrySpeak) {
+        AppendMenuW(h, MF_STRING, IDM_BSA_ENTRY_SPEAK, L"Speak file audio");
+    }
 
     SetForegroundWindow(m_hwnd);
     UINT cmd = TrackPopupMenu(h, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, m_hwnd, nullptr);
@@ -2625,6 +2638,8 @@ void MainWindow::OnBsaDialogueListContextMenu(LPARAM lParam) {
 
     if (cmd == IDM_BSA_DIALOGUE_SPEAK) {
         CmdSpeakBsaDialogueLine(target);
+    } else if (cmd == IDM_BSA_ENTRY_SPEAK) {
+        CmdSpeakSelectedFlcEntry();
     }
 }
 
@@ -2680,7 +2695,7 @@ void MainWindow::CmdSpeakBsaDialogueLine(const FlcSpeakTarget& target) {
 
     DialogueCodeParts parts{};
     if (!TryParseDialogueCodeParts(target.code, parts)) {
-        MessageBoxW(m_hwnd, (L"Could not parse dialogue code: " + target.code).c_str(), L"Speak", MB_OK | MB_ICONWARNING);
+        MessageBoxW(m_hwnd, (L"Speak error: Could not parse dialogue code: " + target.code).c_str(), L"Speak error", MB_OK | MB_ICONWARNING);
         return;
     }
 
@@ -2752,6 +2767,56 @@ void MainWindow::CmdSpeakBsaDialogueLine(const FlcSpeakTarget& target) {
 }
 
 
+void MainWindow::CmdSpeakSelectedFlcEntry() {
+    auto* p = GetSelectedPayload();
+    if (!p || p->kind != TreePayload::Kind::BsaEntry || p->bsaArchiveIndex >= m_bsaArchives.size()) return;
+
+    const auto& ar = m_bsaArchives[p->bsaArchiveIndex];
+    if (_wcsicmp(ar.sourcePath.filename().wstring().c_str(), L"FLC.BSA") != 0 || p->bsaEntryIndex >= ar.entries.size()) return;
+
+    const auto& e = ar.entries[p->bsaEntryIndex];
+    std::wstring entryName = winutil::WidenUtf8(e.name);
+    std::wstring lowerName = ToLowerWs(entryName);
+    if (!EndsWithWs(lowerName, L".flc")) {
+        MessageBoxW(m_hwnd, L"Selected entry is not an FLC clip.", L"Speak", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    std::vector<uint8_t> bytes;
+    std::wstring err;
+    if (!ar.ReadEntryData(e, bytes, &err)) {
+        MessageBoxW(m_hwnd, (L"Failed to read FLC clip: " + err).c_str(), L"Speak", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    bool stripped = false;
+    battlespire::FlcFile::NormalizeLeadingPrefix(bytes, stripped);
+
+    std::wstring safeName = BaseNameOnly(entryName);
+    for (auto& c : safeName) {
+        if (c == L'/' || c == L'\\' || c == L':' || c == L'*' || c == L'?' || c == L'"' || c == L'<' || c == L'>' || c == L'|') c = L'_';
+    }
+
+    std::filesystem::path out = std::filesystem::temp_directory_path() / (L"DaggerfallCS_" + safeName);
+    std::ofstream f(out, std::ios::binary);
+    if (!f) {
+        MessageBoxW(m_hwnd, L"Failed to write temporary FLC file.", L"Speak", MB_OK | MB_ICONERROR);
+        return;
+    }
+    if (!bytes.empty()) f.write(reinterpret_cast<const char*>(bytes.data()), (std::streamsize)bytes.size());
+    f.close();
+
+    HINSTANCE h = ShellExecuteW(m_hwnd, L"open", out.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if ((INT_PTR)h <= 32) {
+        std::wstring msg = L"Could not open FLC clip in the default viewer. File saved to:\r\n" + out.wstring();
+        MessageBoxW(m_hwnd, msg.c_str(), L"Speak", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    std::wstring st = L"Speak file: " + entryName;
+    if (stripped) st += L" (normalized)";
+    SetStatus(st);
+}
 void MainWindow::ShowBsaDialogueRowPreview(int row) {
     if (row < 0 || (size_t)row >= m_bsaDialogueRows.size()) return;
 
