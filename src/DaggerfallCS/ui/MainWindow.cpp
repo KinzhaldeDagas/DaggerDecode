@@ -272,6 +272,11 @@ static bool IsMagicTxtBsaEntryName(const std::wstring& entryName) {
     return bn == L"mg0_gen.txt" || bn == L"magic.txt" || bn == L"mg2_spc.txt";
 }
 
+static bool IsMagicCategoryName(const std::wstring& categoryLabel) {
+    std::wstring cat = ToLowerWs(TrimWs(categoryLabel));
+    return cat == L"magic" || cat.rfind(L"magic (", 0) == 0;
+}
+
 struct MagicBundleRow {
     std::wstring source;
     std::wstring name;
@@ -305,6 +310,34 @@ static std::wstring CompactIntListSummary(const std::wstring& label, const std::
     for (int v : vals) if (v >= 0) used++;
     if (vals.empty()) return raw;
     return raw + L"  [" + label + L" refs=" + std::to_wstring(used) + L"/" + std::to_wstring(vals.size()) + L"]";
+}
+
+static std::wstring FormatAppInfo(const std::wstring& raw) {
+    const auto vals = ParseCommaInts(raw);
+    if (vals.empty()) return raw;
+
+    if (vals.size() == 1) {
+        return raw + L"  [base=" + std::to_wstring(vals[0]) + L"%]";
+    }
+
+    int baseChance = vals.back();
+    const bool looksPairList = (vals.size() >= 3) && (((vals.size() - 1) % 2) == 0);
+    if (!looksPairList) {
+        return raw + L"  [base=" + std::to_wstring(baseChance) + L"%; tokens=" + std::to_wstring(vals.size()) + L"]";
+    }
+
+    std::wstring decoded;
+    size_t pairCount = 0;
+    for (size_t i = 0; i + 1 < vals.size() - 1; i += 2) {
+        if (!decoded.empty()) decoded += L", ";
+        decoded += L"#" + std::to_wstring(vals[i]);
+        int delta = vals[i + 1];
+        if (delta >= 0) decoded += L" +" + std::to_wstring(delta);
+        else decoded += L" " + std::to_wstring(delta);
+        pairCount++;
+    }
+
+    return raw + L"  [mods=" + std::to_wstring(pairCount) + L"; base=" + std::to_wstring(baseChance) + L"%; " + decoded + L"]";
 }
 
 static std::vector<MagicBundleRow> ParseMagicBundleRows(const std::wstring& text, const std::wstring& sourceName) {
@@ -1125,6 +1158,16 @@ void MainWindow::StartTreeBuild() {
                     continue;
                 }
 
+
+                if (IsMagicCategoryName(cat)) {
+                    TVITEMW ti{};
+                    ti.mask = TVIF_PARAM | TVIF_HANDLE;
+                    ti.hItem = ch;
+                    ti.lParam = (LPARAM)AddPayload(TreePayload::Kind::BsaMagicCombined, 0, (size_t)-1, ai, (size_t)-1);
+                    TreeView_SetItem(m_tree, &ti);
+                    continue;
+                }
+
                 for (size_t ei : it->second) insertEntryNode(ch, ei);
             }
 
@@ -1679,6 +1722,74 @@ void MainWindow::OnTreeSelChanged() {
         return;
     }
 
+    if (p->kind == TreePayload::Kind::BsaMagicCombined) {
+        SetupListColumns_TextSubrecords();
+        ListView_DeleteAllItems(m_list);
+
+        if (p->bsaArchiveIndex >= m_bsaArchives.size()) return;
+        const auto& ar = m_bsaArchives[p->bsaArchiveIndex];
+
+        std::vector<MagicBundleRow> allRows;
+        for (const auto& e : ar.entries) {
+            std::wstring nameLow = ToLowerWs(winutil::WidenUtf8(e.name));
+            if (!IsMagicTxtBsaEntryName(nameLow)) continue;
+
+            std::vector<uint8_t> bytes;
+            std::wstring err;
+            if (!ar.ReadEntryData(e, bytes, &err)) continue;
+            if (!IsLikelyUtf8Printable(bytes)) continue;
+
+            std::string text(bytes.begin(), bytes.end());
+            std::wstring preview = winutil::WidenUtf8(text);
+            auto rows = ParseMagicBundleRows(preview, BaseNameOnly(nameLow));
+            allRows.insert(allRows.end(), rows.begin(), rows.end());
+        }
+
+        const std::vector<std::wstring> headers = {
+            L"Name", L"Spell Info", L"Level", L"APP Info", L"ID", L"Item", L"Uses", L"Adv", L"Class", L"Source"
+        };
+        SetupListColumns_BsaTable(headers);
+        m_bsaDialogueKind = BsaDialogueKind::Table;
+        m_bsaDialogueHeaders = headers;
+        m_bsaDialogueRows.clear();
+        m_bsaDialogueTitle = L"Magic (combined)";
+
+        for (size_t ri = 0; ri < allRows.size(); ++ri) {
+            const auto& r = allRows[ri];
+            std::vector<std::wstring> out = {
+                r.name,
+                CompactIntListSummary(L"spell", r.spell),
+                r.level,
+                FormatAppInfo(r.app),
+                r.id,
+                r.item,
+                r.uses,
+                r.adv,
+                r.cls,
+                r.source
+            };
+            m_bsaDialogueRows.push_back(out);
+
+            LVITEMW it{};
+            it.mask = LVIF_TEXT;
+            it.iItem = (int)ri;
+            it.pszText = const_cast<wchar_t*>(out[0].c_str());
+            ListView_InsertItem(m_list, &it);
+            for (int ci = 1; ci < (int)out.size(); ++ci) {
+                ListView_SetItemText(m_list, (int)ri, ci, const_cast<wchar_t*>(out[ci].c_str()));
+            }
+        }
+
+        if (allRows.empty()) {
+            SetWindowTextW(m_preview, L"No parseable magic rows found in MG0_GEN.TXT, MAGIC.TXT, or MG2_SPC.TXT.");
+        }
+        else {
+            SetWindowTextW(m_preview, L"Combined magic table from MG0_GEN.TXT, MAGIC.TXT, and MG2_SPC.TXT.");
+        }
+        m_viewMode = ViewMode::BsaEntry;
+        return;
+    }
+
     if (p->kind == TreePayload::Kind::BsaEntry) {
         SetupListColumns_TextSubrecords();
         ListView_DeleteAllItems(m_list);
@@ -1722,7 +1833,7 @@ void MainWindow::OnTreeSelChanged() {
                             r.name,
                             CompactIntListSummary(L"spell", r.spell),
                             r.level,
-                            CompactIntListSummary(L"app", r.app),
+                            FormatAppInfo(r.app),
                             r.id,
                             r.item,
                             r.uses,
