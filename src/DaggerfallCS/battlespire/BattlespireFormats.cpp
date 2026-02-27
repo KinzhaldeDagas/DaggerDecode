@@ -451,6 +451,9 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
         }
     };
 
+    int64_t ambientSum = 0;
+    int64_t brightnessSum = 0;
+
     if (bytes.size() < 8) {
         if (err) *err = L"BS6 scene payload is too small.";
         return false;
@@ -512,6 +515,14 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
                 }
                 out.boxes.push_back(std::move(b));
             }
+            else if (name == "AMBI" && len >= 4) {
+                ambientSum += readI32(payload);
+                out.ambientSamples++;
+            }
+            else if (name == "BRIT" && len >= 4) {
+                brightnessSum += readI32(payload);
+                out.brightnessSamples++;
+            }
             else if (name == "LFIL") {
                 parseLfil(payload, len, localTemplates);
                 activeTemplates = &localTemplates;
@@ -548,6 +559,9 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
         if (err) *err = L"BS6 scene contains no parseable markers, boxes, or models.";
         return false;
     }
+
+    if (out.ambientSamples > 0) out.ambient = int32_t(ambientSum / (int64_t)out.ambientSamples);
+    if (out.brightnessSamples > 0) out.brightness = int32_t(brightnessSum / (int64_t)out.brightnessSamples);
 
     return true;
 }

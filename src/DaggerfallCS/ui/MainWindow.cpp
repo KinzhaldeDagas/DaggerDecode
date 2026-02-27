@@ -121,6 +121,40 @@ static std::string NormalizeTextureStem(std::string stem) {
 
 
 
+
+static std::string StemFamilyKey(const std::string& stemIn) {
+    std::string stem = NormalizeTextureStem(stemIn);
+    if (stem.empty()) return stem;
+    size_t i = 0;
+    while (i < stem.size() && (isalpha((unsigned char)stem[i]) || stem[i] == '_')) ++i;
+    if (i == 0) {
+        while (i < stem.size() && !isdigit((unsigned char)stem[i])) ++i;
+    }
+    if (i == 0 || i > 16) i = std::min<size_t>(stem.size(), 4);
+    return stem.substr(0, i);
+}
+
+static std::unordered_map<std::string, std::vector<std::string>> LoadBsiFamilyInventory() {
+    std::unordered_map<std::string, std::vector<std::string>> out;
+    std::ifstream f("batspire/research_phase2/bsi_filename_inventory.csv", std::ios::binary);
+    if (!f) return out;
+
+    std::string line;
+    if (!std::getline(f, line)) return out;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        size_t c = line.find(',');
+        std::string stem = NormalizeTextureStem(c == std::string::npos ? line : line.substr(0, c));
+        if (stem.empty()) continue;
+        std::string fam = StemFamilyKey(stem);
+        if (fam.empty()) continue;
+        auto& v = out[fam];
+        if (v.size() >= 64) continue;
+        if (std::find(v.begin(), v.end(), stem) == v.end()) v.push_back(stem);
+    }
+    return out;
+}
+
 struct BsiPreviewTexture {
     int width{};
     int height{};
@@ -258,6 +292,11 @@ static const std::unordered_map<std::string, std::vector<std::string>>& TextureF
     return s;
 }
 
+static const std::unordered_map<std::string, std::vector<std::string>>& BsiFamilyInventory() {
+    static const auto s = LoadBsiFamilyInventory();
+    return s;
+}
+
 static std::unordered_map<std::string, std::string>& TextureResolveCache() {
     static std::unordered_map<std::string, std::string> s;
     return s;
@@ -374,6 +413,22 @@ static const BsiPreviewTexture* TryGetTextureForFace(const std::array<uint8_t, 6
         }
     }
 
+    std::string hintFamily = StemFamilyKey(stemHint);
+    if (!hintFamily.empty()) {
+        const auto& inv = BsiFamilyInventory();
+        auto fi = inv.find(hintFamily);
+        if (fi != inv.end()) {
+            size_t tried = 0;
+            for (const auto& stem : fi->second) {
+                if (const auto* t = TryGetTextureByStem(stem)) {
+                    resolveCache[tagHex] = stem;
+                    return t;
+                }
+                if (++tried >= 8) break;
+            }
+        }
+    }
+
     return nullptr;
 }
 
@@ -467,6 +522,10 @@ struct LevelPreviewScene {
     size_t modelInstances{};
     size_t resolvedInstances{};
     size_t missingInstances{};
+    int32_t ambient{};
+    int32_t brightness{ 1023 };
+    uint32_t ambientSamples{};
+    uint32_t brightnessSamples{};
     std::wstring label;
 };
 
@@ -520,6 +579,10 @@ static void DrawTextBottomRight(HDC hdc, RECT rc, const std::wstring& text, COLO
     DrawTextW(hdc, text.c_str(), -1, &tr, DT_RIGHT | DT_BOTTOM | DT_SINGLELINE);
 }
 
+static bool IsMovementInputActive(const LevelPreviewState& s) {
+    return s.keys['W'] || s.keys['A'] || s.keys['S'] || s.keys['D'] || s.keys['Q'] || s.keys['E'] || ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0);
+}
+
 static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, float y, float z, POINT& out) {
     float dx = x - s.camX;
     float dy = y - s.camY;
@@ -561,6 +624,8 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     s.backBuffer.ResetFrame();
     auto& colorBuffer = s.backBuffer.color;
     auto& zBuffer = s.backBuffer.depth;
+    bool movementActive = IsMovementInputActive(s);
+    const int pixelStep = movementActive ? 2 : 1;
 
     auto toBgr32 = [](COLORREF c) -> uint32_t {
         return (uint32_t(GetRValue(c)) << 16) | (uint32_t(GetGValue(c)) << 8) | uint32_t(GetBValue(c));
@@ -684,8 +749,8 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                 float den = float((p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y));
                 if (!std::isfinite(den) || fabsf(den) < 1e-5f) continue;
 
-                for (int y = miny; y <= maxy; ++y) {
-                    for (int x = minx; x <= maxx; ++x) {
+                for (int y = miny; y <= maxy; y += pixelStep) {
+                    for (int x = minx; x <= maxx; x += pixelStep) {
                         float w0 = float((p1.y - p2.y) * (x - p2.x) + (p2.x - p1.x) * (y - p2.y)) / den;
                         float w1 = float((p2.y - p0.y) * (x - p2.x) + (p0.x - p2.x) * (y - p2.y)) / den;
                         float w2 = 1.0f - w0 - w1;
@@ -705,8 +770,19 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                         float v = (w0 * viz0 + w1 * viz1 + w2 * viz2) / iz;
                         if (!std::isfinite(u) || !std::isfinite(v)) continue;
 
-                        zBuffer[zidx] = z;
-                        colorBuffer[zidx] = toBgr32(SampleTextureColor(*tex, u, v, s.bilinearSampling));
+                        uint32_t sampled = toBgr32(SampleTextureColor(*tex, u, v, s.bilinearSampling));
+                        for (int oy = 0; oy < pixelStep; ++oy) {
+                            int py = y + oy;
+                            if (py > maxy || py >= h) break;
+                            for (int ox = 0; ox < pixelStep; ++ox) {
+                                int px = x + ox;
+                                if (px > maxx || px >= w) break;
+                                size_t pidx = size_t(py) * size_t(w) + size_t(px);
+                                if (pidx >= zBuffer.size()) continue;
+                                zBuffer[pidx] = z;
+                                colorBuffer[pidx] = sampled;
+                            }
+                        }
                     }
                 }
             }
@@ -730,8 +806,10 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                 float den = float((p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y));
                 if (!std::isfinite(den) || fabsf(den) < 1e-5f) continue;
 
-                for (int y = miny; y <= maxy; ++y) {
-                    for (int x = minx; x <= maxx; ++x) {
+                const int triArea = (maxx - minx + 1) * (maxy - miny + 1);
+                if (triArea > (w * h * 3) / 4) continue;
+                for (int y = miny; y <= maxy; y += pixelStep) {
+                    for (int x = minx; x <= maxx; x += pixelStep) {
                         float w0 = float((p1.y - p2.y) * (x - p2.x) + (p2.x - p1.x) * (y - p2.y)) / den;
                         float w1 = float((p2.y - p0.y) * (x - p2.x) + (p0.x - p2.x) * (y - p2.y)) / den;
                         float w2 = 1.0f - w0 - w1;
@@ -744,8 +822,19 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
                         if (zidx >= zBuffer.size()) continue;
                         if (z >= zBuffer[zidx]) continue;
 
-                        zBuffer[zidx] = z;
-                        colorBuffer[zidx] = toBgr32(df.color);
+                        uint32_t flat = toBgr32(df.color);
+                        for (int oy = 0; oy < pixelStep; ++oy) {
+                            int py = y + oy;
+                            if (py > maxy || py >= h) break;
+                            for (int ox = 0; ox < pixelStep; ++ox) {
+                                int px = x + ox;
+                                if (px > maxx || px >= w) break;
+                                size_t pidx = size_t(py) * size_t(w) + size_t(px);
+                                if (pidx >= zBuffer.size()) continue;
+                                zBuffer[pidx] = z;
+                                colorBuffer[pidx] = flat;
+                            }
+                        }
                     }
                 }
             }
@@ -769,7 +858,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         drawLine3(c[5], c[1]); drawLine3(c[5], c[2]); drawLine3(c[5], c[3]);
     }
 
-    for (const auto& df : drawFaces) {
+    if (!movementActive) for (const auto& df : drawFaces) {
         if (df.pts.size() < 3) continue;
         const COLORREF outline = (df.hasUvTexture && df.uvs.size() == df.pts.size())
             ? RGB(GetRValue(df.color) / 3, GetGValue(df.color) / 3, GetBValue(df.color) / 3)
@@ -793,7 +882,9 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     DeleteObject(penBox);
     DeleteObject(penPoint);
 
-    std::wstring msg = s.scene->label + L"  models " + std::to_wstring(s.scene->resolvedInstances) + L"/" + std::to_wstring(s.scene->modelInstances) + L"  (WASD move, Shift 2x, Q/E vertical, click+drag rotate, B toggle bilinear, z-tested perspective UV raster, event-driven redraw, buffered frame upload)";
+    std::wstring msg = s.scene->label + L"  models " + std::to_wstring(s.scene->resolvedInstances) + L"/" + std::to_wstring(s.scene->modelInstances) +
+        L"  light A/B " + std::to_wstring(s.scene->ambient) + L"/" + std::to_wstring(s.scene->brightness) +
+        L"  (WASD move, Shift 2x, Q/E vertical, click+drag rotate, B toggle bilinear, z-tested perspective UV raster, event-driven redraw, buffered frame upload, adaptive motion sampling)";
     DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
 }
 
@@ -837,7 +928,11 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         if (s && (wParam == 'B' || wParam == 'b')) { s->bilinearSampling = !s->bilinearSampling; InvalidateRect(hwnd, nullptr, FALSE); }
         return 0;
     case WM_KEYUP:
-        if (s && wParam < s->keys.size()) s->keys[wParam] = false;
+        if (s && wParam < s->keys.size()) {
+            s->keys[wParam] = false;
+            if (wParam == 'W' || wParam == 'A' || wParam == 'S' || wParam == 'D' || wParam == 'Q' || wParam == 'E' || wParam == VK_SHIFT)
+                InvalidateRect(hwnd, nullptr, FALSE);
+        }
         return 0;
     case WM_LBUTTONDOWN:
         if (s) {
@@ -1867,6 +1962,10 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
     if (scene) {
         payload->markers = scene->markers;
         payload->boxes = scene->boxes;
+        payload->ambient = scene->ambient;
+        payload->brightness = scene->brightness;
+        payload->ambientSamples = scene->ambientSamples;
+        payload->brightnessSamples = scene->brightnessSamples;
 
         auto* modelsArchive = [&]() -> const battlespire::BsaArchive* {
             for (const auto& a : m_bsaArchives) {
@@ -1878,13 +1977,24 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
         if (modelsArchive) {
             std::unordered_map<std::string, battlespire::B3dMesh> meshCache;
 
-            auto colorFromTextureTag = [](const std::array<uint8_t, 6>& t, const std::string& stemHint) -> COLORREF {
+            float ambientNorm = std::clamp(float(payload->ambient) / 60000.0f, 0.0f, 1.0f);
+            float brightnessNorm = std::clamp(float(payload->brightness) / 1023.0f, 0.0f, 1.5f);
+            float lightingScale = std::clamp(0.20f + 0.65f * brightnessNorm + 0.35f * ambientNorm, 0.20f, 1.35f);
+
+            auto applyLightScale = [&](COLORREF c) -> COLORREF {
+                int r = std::clamp(int(float(GetRValue(c)) * lightingScale), 0, 255);
+                int g = std::clamp(int(float(GetGValue(c)) * lightingScale), 0, 255);
+                int b = std::clamp(int(float(GetBValue(c)) * lightingScale), 0, 255);
+                return RGB(r, g, b);
+            };
+
+            auto colorFromTextureTag = [&](const std::array<uint8_t, 6>& t, const std::string& stemHint) -> COLORREF {
                 if (const auto* tex = TryGetTextureForFace(t, stemHint)) {
                     uint32_t h = 2166136261u;
                     for (uint8_t bt : t) h = (h ^ bt) * 16777619u;
                     float u = float((h >> 8) % std::max(1, tex->width));
                     float v = float((h >> 16) % std::max(1, tex->height));
-                    return SampleTextureColor(*tex, u, v, false);
+                    return applyLightScale(SampleTextureColor(*tex, u, v, false));
                 }
 
                 bool allZero = true;
@@ -1893,7 +2003,7 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
                     if (bt != 0) allZero = false;
                     h = (h ^ bt) * 16777619u;
                 }
-                if (allZero) return RGB(100, 100, 100);
+                if (allZero) return applyLightScale(RGB(100, 100, 100));
 
                 uint8_t r = uint8_t(32 + (h & 0xBF));
                 uint8_t g = uint8_t(32 + ((h >> 8) & 0xBF));
@@ -1901,7 +2011,7 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
                 if (r > 150 && b > 150 && g < 120) {
                     g = uint8_t(std::min(255, (int)g + 90));
                 }
-                return RGB(r, g, b);
+                return applyLightScale(RGB(r, g, b));
             };
 
             auto applyTransform = [](const battlespire::Int3& v, const battlespire::Bs6ModelInstance& inst, battlespire::Int3& out) -> bool {

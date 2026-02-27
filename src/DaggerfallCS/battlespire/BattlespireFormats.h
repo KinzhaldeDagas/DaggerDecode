@@ -93,6 +93,10 @@ struct Bs6Scene {
     std::vector<Bs6SceneBox> boxes;
     std::vector<Bs6ModelInstance> models;
     std::vector<std::string> unresolvedModelNames;
+    int32_t ambient = 0;
+    int32_t brightness = 1023;
+    uint32_t ambientSamples = 0;
+    uint32_t brightnessSamples = 0;
 
     static bool TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& out, std::wstring* err);
 };
