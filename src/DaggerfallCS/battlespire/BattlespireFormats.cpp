@@ -491,6 +491,10 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
                 if (err) *err = L"BS6 scene parse exceeded payload bounds.";
                 return false;
             }
+            if (next <= p) {
+                if (err) *err = L"BS6 scene parse encountered non-advancing chunk.";
+                return false;
+            }
 
             const uint8_t* payload = bytes.data() + p + 8;
             if (name == "POSI" && len >= 12) {
@@ -522,6 +526,21 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
             else if (name == "BRIT" && len >= 4) {
                 brightnessSum += readI32(payload);
                 out.brightnessSamples++;
+            }
+            else if (name == "LITD") {
+                out.litdCount++;
+            }
+            else if (name == "LITS") {
+                out.litsCount++;
+            }
+            else if (name == "FLAD") {
+                out.fladCount++;
+            }
+            else if (name == "FLAS") {
+                out.flasCount++;
+            }
+            else if (name == "RAWD") {
+                out.rawdCount++;
             }
             else if (name == "LFIL") {
                 parseLfil(payload, len, localTemplates);
@@ -562,6 +581,11 @@ bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& ou
 
     if (out.ambientSamples > 0) out.ambient = int32_t(ambientSum / (int64_t)out.ambientSamples);
     if (out.brightnessSamples > 0) out.brightness = int32_t(brightnessSum / (int64_t)out.brightnessSamples);
+
+    // Phase-3 research observed AMBI in [0, 60000] and BRIT in [11, 1023] across scanned BS6 files.
+    // Clamp to renderer-safe ranges to avoid malformed payloads producing pathological lighting multipliers.
+    out.ambient = std::clamp(out.ambient, 0, 60000);
+    out.brightness = std::clamp(out.brightness, 0, 1023);
 
     return true;
 }
@@ -625,6 +649,12 @@ bool B3dMesh::TryParse(const std::vector<uint8_t>& bytes, B3dMesh& out, std::wst
         }
 
         uint8_t pointPerPlane = bytes[planeCursor + 0];
+        static constexpr uint8_t kMaxPointsPerFace = 32;
+        if (pointPerPlane == 0 || pointPerPlane > kMaxPointsPerFace) {
+            if (err) *err = L"3D plane uses unsupported point count.";
+            return false;
+        }
+
         size_t pointsBytes = size_t(pointPerPlane) * 8u;
         size_t next = planeCursor + 10 + pointsBytes;
         if (next > bytes.size()) {

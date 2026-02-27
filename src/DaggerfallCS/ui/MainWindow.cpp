@@ -163,6 +163,11 @@ struct BsiPreviewTexture {
     bool hasPalette{ false };
 };
 
+static constexpr uint32_t kMaxBsiBytes = 16u * 1024u * 1024u;
+static constexpr int kMaxBsiDimension = 4096;
+static constexpr int kMaxBsiFrames = 64;
+static constexpr size_t kMaxBsiPixels = size_t(kMaxBsiDimension) * size_t(kMaxBsiDimension);
+
 static uint32_t ReadU32BE(const uint8_t* p) {
     return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | uint32_t(p[3]);
 }
@@ -214,15 +219,20 @@ static bool TryDecodeBsiPreviewTexture(const std::vector<uint8_t>& bytes, BsiPre
     }
 
     if (width <= 0 || height <= 0 || data.empty()) return false;
-    const size_t rowCount = size_t(height) * size_t(std::max(1, frames));
+    if (width > kMaxBsiDimension || height > kMaxBsiDimension) return false;
+    if (frames <= 0 || frames > kMaxBsiFrames) return false;
+
+    const size_t rowCount = size_t(height) * size_t(frames);
+    const size_t expectedPixels = size_t(width) * rowCount;
+    if (rowCount == 0 || expectedPixels == 0 || expectedPixels > kMaxBsiPixels) return false;
 
     if (flags == 0) {
-        size_t need = size_t(width) * rowCount;
+        size_t need = expectedPixels;
         if (data.size() < need) return false;
         out.indices.assign(data.begin(), data.begin() + need);
     } else if (flags == 4 || flags == 6) {
         if (data.size() < rowCount * 4) return false;
-        out.indices.reserve(size_t(width) * rowCount);
+        out.indices.reserve(expectedPixels);
         for (size_t r = 0; r < rowCount; ++r) {
             uint32_t idx = ReadU32LE(data.data() + r * 4);
             bool compressed = (idx & 0x80000000u) != 0;
@@ -256,7 +266,7 @@ static bool TryDecodeBsiPreviewTexture(const std::vector<uint8_t>& bytes, BsiPre
     }
 
     out.width = width;
-    out.height = height * std::max(1, frames);
+    out.height = height * frames;
 
     if (!hicl.empty()) {
         out.hasPalette = true;
@@ -278,6 +288,7 @@ static bool TryDecodeBsiPreviewTexture(const std::vector<uint8_t>& bytes, BsiPre
         }
     }
 
+    if (out.indices.size() != expectedPixels) return false;
     return !out.indices.empty();
 }
 
@@ -307,6 +318,9 @@ static std::unordered_map<std::string, BsiPreviewTexture>& BsiTextureCache() {
     return s;
 }
 
+static constexpr size_t kMaxTextureCacheEntries = 4096;
+static const std::string kMissResolveStem = "__MISS__";
+
 static std::vector<const battlespire::BsaArchive*>& TextureSourceArchives() {
     static std::vector<const battlespire::BsaArchive*> s;
     return s;
@@ -316,21 +330,27 @@ static void RefreshTextureSourceArchives(const std::vector<battlespire::BsaArchi
     auto& out = TextureSourceArchives();
     out.clear();
     TextureResolveCache().clear();
+    BsiTextureCache().clear();
     for (const auto& a : archives) {
         std::wstring wn = a.sourcePath.filename().wstring();
         for (auto& c : wn) c = (wchar_t)towlower(c);
-        if (wn == L"3d.bsa") continue;
-        if (wn.find(L"bsi") != std::wstring::npos || wn.find(L"img") != std::wstring::npos || wn.find(L"tex") != std::wstring::npos)
-            out.push_back(&a);
+        if (wn == L"3d.bsa" || wn == L"waves.bsa" || wn == L"txt.bsa") continue;
+        out.push_back(&a);
     }
 }
 
 
 static bool TryDecodeBsiFromAnyOffset(const std::vector<uint8_t>& bytes, BsiPreviewTexture& out) {
+    if (bytes.empty() || bytes.size() > kMaxBsiBytes) return false;
     if (TryDecodeBsiPreviewTexture(bytes, out)) return true;
+
+    static constexpr size_t kMaxOffsetScans = 32;
+    size_t scans = 0;
     for (size_t i = 0; i + 4 < bytes.size(); ++i) {
         if (bytes[i] == 'B' && bytes[i + 1] == 'H' && bytes[i + 2] == 'D' && bytes[i + 3] == 'R') {
+            if (++scans > kMaxOffsetScans) break;
             std::vector<uint8_t> slice(bytes.begin() + i, bytes.end());
+            if (slice.size() > kMaxBsiBytes) continue;
             if (TryDecodeBsiPreviewTexture(slice, out)) return true;
         }
     }
@@ -351,9 +371,11 @@ static const BsiPreviewTexture* TryGetTextureByStem(const std::string& stemIn) {
             tf.seekg(0, std::ios::end);
             size_t n = (size_t)tf.tellg();
             tf.seekg(0, std::ios::beg);
-            bytes.resize(n);
-            if (n > 0) tf.read(reinterpret_cast<char*>(bytes.data()), (std::streamsize)n);
-            TryDecodeBsiFromAnyOffset(bytes, tex);
+            if (n > 0 && n <= kMaxBsiBytes) {
+                bytes.resize(n);
+                tf.read(reinterpret_cast<char*>(bytes.data()), (std::streamsize)n);
+                if (tf.good() || tf.eof()) TryDecodeBsiFromAnyOffset(bytes, tex);
+            }
         }
 
         if (tex.indices.empty()) {
@@ -365,10 +387,12 @@ static const BsiPreviewTexture* TryGetTextureByStem(const std::string& stemIn) {
                 std::wstring err;
                 std::vector<uint8_t> arcBytes;
                 if (!arc->ReadEntryData(*e, arcBytes, &err)) continue;
+                if (arcBytes.size() > kMaxBsiBytes) continue;
                 if (TryDecodeBsiFromAnyOffset(arcBytes, tex)) break;
             }
         }
 
+        if (cache.size() >= kMaxTextureCacheEntries) cache.clear();
         it = cache.insert({ stem, std::move(tex) }).first;
     }
     if (it->second.indices.empty()) return nullptr;
@@ -377,51 +401,46 @@ static const BsiPreviewTexture* TryGetTextureByStem(const std::string& stemIn) {
 
 static const BsiPreviewTexture* TryGetTextureForFace(const std::array<uint8_t, 6>& tag, const std::string& stemHint) {
     const std::string tagHex = TextureTagHex(tag);
+    const std::string hintFamily = StemFamilyKey(stemHint);
+    const std::string resolveKey = tagHex + "|" + hintFamily;
 
     auto& resolveCache = TextureResolveCache();
-    auto rc = resolveCache.find(tagHex);
-    if (rc != resolveCache.end() && !rc->second.empty()) {
-        if (const auto* t = TryGetTextureByStem(rc->second)) return t;
+    auto rc = resolveCache.find(resolveKey);
+    if (rc != resolveCache.end()) {
+        if (rc->second == kMissResolveStem) return nullptr;
+        if (!rc->second.empty()) {
+            if (const auto* t = TryGetTextureByStem(rc->second)) return t;
+        }
     }
 
-    const auto& bound = BoundTagToStem();
-    auto bt = bound.find(tagHex);
-    if (bt != bound.end()) {
-        if (const auto* t = TryGetTextureByStem(bt->second)) {
-            resolveCache[tagHex] = bt->second;
-            return t;
+    const bool zeroTag = (tagHex == "000000000000");
+
+    if (!zeroTag) {
+        const auto& bound = BoundTagToStem();
+        auto bt = bound.find(tagHex);
+        if (bt != bound.end()) {
+            if (const auto* t = TryGetTextureByStem(bt->second)) {
+                resolveCache[resolveKey] = bt->second;
+                return t;
+            }
         }
     }
 
     if (!stemHint.empty()) {
         if (const auto* t = TryGetTextureByStem(stemHint)) {
-            resolveCache[tagHex] = stemHint;
+            resolveCache[resolveKey] = stemHint;
             return t;
         }
     }
 
-    const auto& families = TextureFamilyFallbacks();
-    auto ft = families.find(tagHex);
-    if (ft != families.end()) {
-        size_t tried = 0;
-        for (const auto& stem : ft->second) {
-            if (const auto* t = TryGetTextureByStem(stem)) {
-                resolveCache[tagHex] = stem;
-                return t;
-            }
-            if (++tried >= 8) break;
-        }
-    }
-
-    std::string hintFamily = StemFamilyKey(stemHint);
-    if (!hintFamily.empty()) {
-        const auto& inv = BsiFamilyInventory();
-        auto fi = inv.find(hintFamily);
-        if (fi != inv.end()) {
+    if (!zeroTag) {
+        const auto& families = TextureFamilyFallbacks();
+        auto ft = families.find(tagHex);
+        if (ft != families.end()) {
             size_t tried = 0;
-            for (const auto& stem : fi->second) {
+            for (const auto& stem : ft->second) {
                 if (const auto* t = TryGetTextureByStem(stem)) {
-                    resolveCache[tagHex] = stem;
+                    resolveCache[resolveKey] = stem;
                     return t;
                 }
                 if (++tried >= 8) break;
@@ -429,6 +448,22 @@ static const BsiPreviewTexture* TryGetTextureForFace(const std::array<uint8_t, 6
         }
     }
 
+    if (!hintFamily.empty()) {
+        const auto& inv = BsiFamilyInventory();
+        auto fi = inv.find(hintFamily);
+        if (fi != inv.end()) {
+            size_t tried = 0;
+            for (const auto& stem : fi->second) {
+                if (const auto* t = TryGetTextureByStem(stem)) {
+                    resolveCache[resolveKey] = stem;
+                    return t;
+                }
+                if (++tried >= 8) break;
+            }
+        }
+    }
+
+    if (!zeroTag) resolveCache[resolveKey] = kMissResolveStem;
     return nullptr;
 }
 
@@ -526,6 +561,11 @@ struct LevelPreviewScene {
     int32_t brightness{ 1023 };
     uint32_t ambientSamples{};
     uint32_t brightnessSamples{};
+    uint32_t litdCount{};
+    uint32_t litsCount{};
+    uint32_t fladCount{};
+    uint32_t flasCount{};
+    uint32_t rawdCount{};
     std::wstring label;
 };
 
@@ -568,6 +608,10 @@ struct LevelPreviewState {
     bool bilinearSampling = false;
     LevelPreviewBackBuffer backBuffer;
     ULONGLONG lastTickMs = 0;
+    ULONGLONG fpsWindowStartMs = 0;
+    ULONGLONG lastFrameMs = 0;
+    uint32_t fpsWindowFrames = 0;
+    float fps = 0.0f;
 };
 
 static void DrawTextBottomRight(HDC hdc, RECT rc, const std::wstring& text, COLORREF color) {
@@ -583,7 +627,7 @@ static bool IsMovementInputActive(const LevelPreviewState& s) {
     return s.keys['W'] || s.keys['A'] || s.keys['S'] || s.keys['D'] || s.keys['Q'] || s.keys['E'] || ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0);
 }
 
-static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, float y, float z, POINT& out) {
+static bool TransformToView(const LevelPreviewState& s, float x, float y, float z, float& outX, float& outY, float& outZ) {
     float dx = x - s.camX;
     float dy = y - s.camY;
     float dz = z - s.camZ;
@@ -597,10 +641,22 @@ static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, floa
     float z2 = sp * dy + cp * z1;
 
     if (!std::isfinite(x1) || !std::isfinite(y1) || !std::isfinite(z2)) return false;
-    if (z2 < 1.0f || z2 > 200000.0f) return false;
+    outX = x1;
+    outY = y1;
+    outZ = z2;
+    return true;
+}
+
+static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, float y, float z, POINT& out) {
+    float vx = 0.0f, vy = 0.0f, vz = 0.0f;
+    if (!TransformToView(s, x, y, z, vx, vy, vz)) return false;
+
+    if (vz < -64.0f || vz > 200000.0f) return false;
+    float safeZ = std::max(0.05f, vz);
+
     float focal = (float)std::min(w, h) * 0.7f;
-    float sx = (x1 / z2) * focal;
-    float syProj = (y1 / z2) * focal;
+    float sx = (vx / safeZ) * focal;
+    float syProj = (vy / safeZ) * focal;
     if (!std::isfinite(sx) || !std::isfinite(syProj)) return false;
     if (fabsf(sx) > 200000.0f || fabsf(syProj) > 200000.0f) return false;
     out.x = int(w * 0.5f + sx);
@@ -625,7 +681,13 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     auto& colorBuffer = s.backBuffer.color;
     auto& zBuffer = s.backBuffer.depth;
     bool movementActive = IsMovementInputActive(s);
-    const int pixelStep = movementActive ? 2 : 1;
+    int pixelStep = movementActive ? 2 : 1;
+    if (s.fps > 0.0f) {
+        if (s.fps < 10.0f) pixelStep = std::max(pixelStep, 5);
+        else if (s.fps < 18.0f) pixelStep = std::max(pixelStep, 4);
+        else if (s.fps < 24.0f) pixelStep = std::max(pixelStep, 3);
+        else if (s.fps < 30.0f) pixelStep = std::max(pixelStep, 2);
+    }
 
     auto toBgr32 = [](COLORREF c) -> uint32_t {
         return (uint32_t(GetRValue(c)) << 16) | (uint32_t(GetGValue(c)) << 8) | uint32_t(GetBValue(c));
@@ -656,18 +718,12 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     drawFaces.reserve(s.scene->modelFaces.size());
 
     auto depthFor = [&](float x, float y, float z, float& outDepth) -> bool {
-        float dx = x - s.camX;
-        float dy = y - s.camY;
-        float dz = z - s.camZ;
-        float cy = cosf(s.yaw), sy = sinf(s.yaw);
-        float cp = cosf(s.pitch), sp = sinf(s.pitch);
-        float x1 = cy * dx - sy * dz;
-        float z1 = sy * dx + cy * dz;
-        float y1 = cp * dy - sp * z1;
-        float z2 = sp * dy + cp * z1;
-        (void)x1; (void)y1;
-        outDepth = z2;
-        return z2 >= 1.0f;
+        float vx = 0.0f, vy = 0.0f, vz = 0.0f;
+        (void)vy;
+        if (!TransformToView(s, x, y, z, vx, vy, vz)) return false;
+        if (vz < -64.0f || vz > 200000.0f) return false;
+        outDepth = std::max(0.05f, vz);
+        return true;
     };
 
     for (const auto& face : s.scene->modelFaces) {
@@ -683,27 +739,25 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         if (face.hasUvTexture) df.uvs = face.uvs;
 
         float depthSum = 0.0f;
-        bool clipped = false;
         for (const auto& wp : face.worldPoints) {
             POINT p{};
             float d = 0.0f;
             if (!ProjectPoint(s, w, h, (float)wp.x, (float)wp.y, (float)wp.z, p) || !depthFor((float)wp.x, (float)wp.y, (float)wp.z, d)) {
-                clipped = true;
-                break;
+                continue;
             }
             depthSum += d;
             df.pts.push_back(p);
             df.depths.push_back(d);
         }
 
-        if (clipped || df.pts.size() < 3) continue;
+        if (df.pts.size() < 3) continue;
+        if (df.uvs.size() != df.pts.size()) {
+            df.hasUvTexture = false;
+            df.uvs.clear();
+        }
         df.avgDepth = depthSum / (float)df.pts.size();
         drawFaces.push_back(std::move(df));
     }
-
-    std::stable_sort(drawFaces.begin(), drawFaces.end(), [](const DrawFace& a, const DrawFace& b) {
-        return a.avgDepth > b.avgDepth;
-    });
 
     for (const auto& df : drawFaces) {
         const auto* tex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForFace(df.textureTag, df.textureStemHint) : nullptr;
@@ -882,8 +936,13 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     DeleteObject(penBox);
     DeleteObject(penPoint);
 
+    wchar_t fpsBuf[64]{};
+    swprintf_s(fpsBuf, L"  FPS %.1f", s.fps);
     std::wstring msg = s.scene->label + L"  models " + std::to_wstring(s.scene->resolvedInstances) + L"/" + std::to_wstring(s.scene->modelInstances) +
         L"  light A/B " + std::to_wstring(s.scene->ambient) + L"/" + std::to_wstring(s.scene->brightness) +
+        L"  LITD/LITS " + std::to_wstring(s.scene->litdCount) + L"/" + std::to_wstring(s.scene->litsCount) +
+        L"  FLAD/FLAS " + std::to_wstring(s.scene->fladCount) + L"/" + std::to_wstring(s.scene->flasCount) +
+        L"  RAWD " + std::to_wstring(s.scene->rawdCount) + fpsBuf +
         L"  (WASD move, Shift 2x, Q/E vertical, click+drag rotate, B toggle bilinear, z-tested perspective UV raster, event-driven redraw, buffered frame upload, adaptive motion sampling)";
     DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
 }
@@ -897,6 +956,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         s->hwnd = hwnd;
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)s);
         s->lastTickMs = GetTickCount64();
+        s->fpsWindowStartMs = s->lastTickMs;
         SetTimer(hwnd, 1, 16, nullptr);
         return 0;
     }
@@ -990,7 +1050,21 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             HDC hdc = BeginPaint(hwnd, &ps);
             RECT rc{};
             GetClientRect(hwnd, &rc);
+            ULONGLONG frameStart = GetTickCount64();
             DrawLevelScene(*s, hdc, rc);
+            ULONGLONG frameEnd = GetTickCount64();
+            s->lastFrameMs = (frameEnd >= frameStart) ? (frameEnd - frameStart) : 0;
+            s->fpsWindowFrames++;
+            if (s->fpsWindowStartMs == 0) s->fpsWindowStartMs = frameEnd;
+            ULONGLONG fpsDt = (frameEnd >= s->fpsWindowStartMs) ? (frameEnd - s->fpsWindowStartMs) : 0;
+            if (fpsDt >= 500) {
+                s->fps = float(s->fpsWindowFrames) * 1000.0f / float(std::max<ULONGLONG>(1, fpsDt));
+                s->fpsWindowFrames = 0;
+                s->fpsWindowStartMs = frameEnd;
+            }
+            wchar_t title[128]{};
+            swprintf_s(title, L"Level Preview - %.1f FPS", s->fps);
+            SetWindowTextW(hwnd, title);
             EndPaint(hwnd, &ps);
             return 0;
         }
@@ -1966,6 +2040,11 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
         payload->brightness = scene->brightness;
         payload->ambientSamples = scene->ambientSamples;
         payload->brightnessSamples = scene->brightnessSamples;
+        payload->litdCount = scene->litdCount;
+        payload->litsCount = scene->litsCount;
+        payload->fladCount = scene->fladCount;
+        payload->flasCount = scene->flasCount;
+        payload->rawdCount = scene->rawdCount;
 
         auto* modelsArchive = [&]() -> const battlespire::BsaArchive* {
             for (const auto& a : m_bsaArchives) {
@@ -1976,10 +2055,12 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
 
         if (modelsArchive) {
             std::unordered_map<std::string, battlespire::B3dMesh> meshCache;
+            std::unordered_set<std::string> failedMeshKeys;
 
             float ambientNorm = std::clamp(float(payload->ambient) / 60000.0f, 0.0f, 1.0f);
-            float brightnessNorm = std::clamp(float(payload->brightness) / 1023.0f, 0.0f, 1.5f);
-            float lightingScale = std::clamp(0.20f + 0.65f * brightnessNorm + 0.35f * ambientNorm, 0.20f, 1.35f);
+            float brightnessNorm = std::clamp(float(payload->brightness) / 1023.0f, 0.0f, 1.0f);
+            // Research-guided conservative blend; BRIT tracks LITD counts strongly and AMBI has broad variance.
+            float lightingScale = std::clamp(0.25f + 0.60f * brightnessNorm + 0.30f * ambientNorm, 0.20f, 1.20f);
 
             auto applyLightScale = [&](COLORREF c) -> COLORREF {
                 int r = std::clamp(int(float(GetRValue(c)) * lightingScale), 0, 255);
@@ -2050,10 +2131,20 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
                 return true;
             };
 
-            payload->modelInstances = scene->models.size();
+            static constexpr size_t kMaxPreviewModels = 50000;
+            static constexpr size_t kMaxPreviewFaces = 200000;
+            static constexpr size_t kMaxUniqueMeshes = 2048;
+            static constexpr uint32_t kMaxMeshBytes = 8u * 1024u * 1024u;
+            // Research phase1 tops out around ~672 points / ~1050 planes; keep generous safety headroom.
+            static constexpr uint32_t kMaxMeshPoints = 8192;
+            static constexpr uint32_t kMaxMeshPlanes = 8192;
+            payload->modelInstances = std::min(scene->models.size(), kMaxPreviewModels);
             std::unordered_set<std::string> missingNames;
+            size_t invalidMeshInstances = 0;
 
-            for (const auto& inst : scene->models) {
+            for (size_t modelIndex = 0; modelIndex < scene->models.size(); ++modelIndex) {
+                if (modelIndex >= kMaxPreviewModels || payload->modelFaces.size() >= kMaxPreviewFaces) break;
+                const auto& inst = scene->models[modelIndex];
                 std::string modelKey = inst.modelName;
                 for (auto& c : modelKey) c = (char)toupper((unsigned char)c);
                 if (!modelKey.empty() && modelKey.find('.') == std::string::npos) modelKey += ".3D";
@@ -2079,22 +2170,51 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
                     return nullptr;
                 };
 
+                if (failedMeshKeys.find(modelKey) != failedMeshKeys.end()) {
+                    missingNames.insert(modelKey);
+                    invalidMeshInstances++;
+                    continue;
+                }
+
                 auto mit = meshCache.find(modelKey);
                 if (mit == meshCache.end()) {
-                    const auto* entry = resolveEntry(modelKey);
-                    if (!entry) {
+                    if (meshCache.size() >= kMaxUniqueMeshes) {
+                        failedMeshKeys.insert(modelKey);
                         missingNames.insert(modelKey);
+                        invalidMeshInstances++;
                         continue;
                     }
+
+                    const auto* entry = resolveEntry(modelKey);
+                    if (!entry || entry->packedSize > kMaxMeshBytes) {
+                        failedMeshKeys.insert(modelKey);
+                        missingNames.insert(modelKey);
+                        invalidMeshInstances++;
+                        continue;
+                    }
+
                     std::vector<uint8_t> bytes;
                     std::wstring err;
-                    if (!modelsArchive->ReadEntryData(*entry, bytes, &err)) {
+                    if (!modelsArchive->ReadEntryData(*entry, bytes, &err) || bytes.size() > kMaxMeshBytes) {
+                        failedMeshKeys.insert(modelKey);
                         missingNames.insert(modelKey);
+                        invalidMeshInstances++;
                         continue;
                     }
+
+                    battlespire::B3dFileSummary summary;
+                    if (!battlespire::B3dFileSummary::TryParse(bytes, summary, &err) || summary.pointCount > kMaxMeshPoints || summary.planeCount > kMaxMeshPlanes) {
+                        failedMeshKeys.insert(modelKey);
+                        missingNames.insert(modelKey);
+                        invalidMeshInstances++;
+                        continue;
+                    }
+
                     battlespire::B3dMesh mesh;
                     if (!battlespire::B3dMesh::TryParse(bytes, mesh, &err)) {
+                        failedMeshKeys.insert(modelKey);
                         missingNames.insert(modelKey);
+                        invalidMeshInstances++;
                         continue;
                     }
                     mit = meshCache.insert({ modelKey, std::move(mesh) }).first;
@@ -2118,13 +2238,22 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
                         if (!applyTransform(mesh.points[pi], inst, wp)) continue;
                         pf.worldPoints.push_back(wp);
                     }
-                    if (pf.worldPoints.size() >= 3) payload->modelFaces.push_back(std::move(pf));
+                    if (pf.worldPoints.size() >= 3) {
+                        payload->modelFaces.push_back(std::move(pf));
+                        if (payload->modelFaces.size() >= kMaxPreviewFaces) break;
+                    }
                 }
             }
 
             payload->missingInstances = payload->modelInstances - payload->resolvedInstances;
+            if (scene->models.size() > payload->modelInstances) {
+                payload->label += L"  truncated:" + std::to_wstring(scene->models.size() - payload->modelInstances);
+            }
             if (payload->missingInstances > 0 && !missingNames.empty()) {
                 payload->label += L"  missing:" + std::to_wstring(payload->missingInstances);
+            }
+            if (invalidMeshInstances > 0) {
+                payload->label += L"  invalid:" + std::to_wstring(invalidMeshInstances);
             }
         }
     }

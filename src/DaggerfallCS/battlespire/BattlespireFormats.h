@@ -97,6 +97,11 @@ struct Bs6Scene {
     int32_t brightness = 1023;
     uint32_t ambientSamples = 0;
     uint32_t brightnessSamples = 0;
+    uint32_t litdCount = 0;
+    uint32_t litsCount = 0;
+    uint32_t fladCount = 0;
+    uint32_t flasCount = 0;
+    uint32_t rawdCount = 0;
 
     static bool TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& out, std::wstring* err);
 };
