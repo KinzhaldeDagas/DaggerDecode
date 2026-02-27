@@ -70,6 +70,24 @@ struct Bs6FileSummary {
     static bool TrySummarize(const std::vector<uint8_t>& bytes, Bs6FileSummary& out, std::wstring* err);
 };
 
+
+struct Int3 {
+    int32_t x{};
+    int32_t y{};
+    int32_t z{};
+};
+
+struct Bs6SceneBox {
+    std::array<Int3, 6> corners{};
+};
+
+struct Bs6Scene {
+    std::vector<Int3> markers;
+    std::vector<Bs6SceneBox> boxes;
+
+    static bool TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& out, std::wstring* err);
+};
+
 struct B3dFileSummary {
     bool valid{ false };
     char version[5]{};

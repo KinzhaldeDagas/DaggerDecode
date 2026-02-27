@@ -363,6 +363,78 @@ bool Bs6FileSummary::TrySummarize(const std::vector<uint8_t>& bytes, Bs6FileSumm
     return true;
 }
 
+
+bool Bs6Scene::TryBuildFromBytes(const std::vector<uint8_t>& bytes, Bs6Scene& out, std::wstring* err) {
+    out = {};
+
+    auto readI32 = [](const uint8_t* p) -> int32_t {
+        return static_cast<int32_t>(ReadU32(p));
+    };
+
+    static const std::unordered_set<std::string> kGroupChunks = {
+        "GNRL", "TEXI", "STRU", "SNAP", "VIEW", "CTRL", "LINK", "OBJS", "OBJD", "LITS", "LITD", "FLAS", "FLAD"
+    };
+
+    std::function<bool(size_t, size_t)> walk = [&](size_t start, size_t end) -> bool {
+        size_t p = start;
+        while (p + 8 <= end) {
+            const uint8_t* h = bytes.data() + p;
+            std::string name(reinterpret_cast<const char*>(h), reinterpret_cast<const char*>(h) + 4);
+            uint32_t len = ReadU32(h + 4);
+            size_t next = p + 8 + size_t(len);
+            if (next > end) {
+                if (err) *err = L"BS6 scene parse exceeded payload bounds.";
+                return false;
+            }
+
+            const uint8_t* payload = bytes.data() + p + 8;
+            if (name == "POSI" && len >= 12) {
+                Int3 m{};
+                m.x = readI32(payload + 0);
+                m.y = readI32(payload + 4);
+                m.z = readI32(payload + 8);
+                out.markers.push_back(m);
+            }
+            else if (name == "BBOX" && len >= 72) {
+                Bs6SceneBox b{};
+                for (size_t i = 0; i < 6; ++i) {
+                    b.corners[i].x = readI32(payload + i * 12 + 0);
+                    b.corners[i].y = readI32(payload + i * 12 + 4);
+                    b.corners[i].z = readI32(payload + i * 12 + 8);
+                }
+                out.boxes.push_back(b);
+            }
+
+            if (kGroupChunks.find(name) != kGroupChunks.end()) {
+                if (!walk(p + 8, next)) return false;
+            }
+
+            p = next;
+        }
+
+        if (p != end) {
+            if (err) *err = L"BS6 scene parse encountered trailing bytes.";
+            return false;
+        }
+
+        return true;
+    };
+
+    if (bytes.size() < 8) {
+        if (err) *err = L"BS6 scene payload is too small.";
+        return false;
+    }
+
+    if (!walk(0, bytes.size())) return false;
+
+    if (out.markers.empty() && out.boxes.empty()) {
+        if (err) *err = L"BS6 scene contains no POSI/BBOX blocks.";
+        return false;
+    }
+
+    return true;
+}
+
 bool B3dFileSummary::TryParse(const std::vector<uint8_t>& bytes, B3dFileSummary& out, std::wstring* err) {
     out = {};
 
