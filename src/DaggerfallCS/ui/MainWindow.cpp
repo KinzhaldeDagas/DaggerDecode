@@ -5,6 +5,7 @@
 #include "../export/CsvWriter.h"
 #include "../arena2/QuestOpcodeDisasm.h"
 #include "../battlespire/BattlespireFormats.h"
+#include <cmath>
 
 namespace ui {
 
@@ -20,6 +21,329 @@ struct MainWindow::LoadResult {
 
 static const wchar_t* kWndClass = L"DaggerfallCS_MainWindow";
 static std::wstring HexU32(uint32_t v);
+static std::string TextureTagHex(const std::array<uint8_t, 6>& t) {
+    static const char* hexd = "0123456789abcdef";
+    std::string out;
+    out.resize(12);
+    for (size_t i = 0; i < 6; ++i) {
+        out[i * 2 + 0] = hexd[(t[i] >> 4) & 0xF];
+        out[i * 2 + 1] = hexd[t[i] & 0xF];
+    }
+    return out;
+}
+
+static std::unordered_map<std::string, std::string> LoadBoundTextureBindings() {
+    std::unordered_map<std::string, std::string> out;
+    std::ifstream f("batspire/research_phase2/texture_tag_bindings.csv", std::ios::binary);
+    if (!f) return out;
+
+    std::string line;
+    if (!std::getline(f, line)) return out;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        std::vector<std::string> cols;
+        std::string cur;
+        for (char c : line) {
+            if (c == ',') {
+                cols.push_back(cur);
+                cur.clear();
+            } else if (c != '\r' && c != '\n') {
+                cur.push_back(c);
+            }
+        }
+        cols.push_back(cur);
+        if (cols.size() < 3) continue;
+        const std::string& tag = cols[0];
+        const std::string& status = cols[1];
+        const std::string& stem = cols[2];
+        if (tag.size() != 12 || stem.empty()) continue;
+        if (status.rfind("bound_", 0) == 0) {
+            out[tag] = stem;
+        }
+    }
+    return out;
+}
+
+
+
+struct BsiPreviewTexture {
+    int width{};
+    int height{};
+    std::vector<uint8_t> indices;
+    std::array<COLORREF, 256> palette{};
+    bool hasPalette{ false };
+};
+
+static uint32_t ReadU32BE(const uint8_t* p) {
+    return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | uint32_t(p[3]);
+}
+
+static uint32_t ReadU32LE(const uint8_t* p) {
+    return (uint32_t(p[3]) << 24) | (uint32_t(p[2]) << 16) | (uint32_t(p[1]) << 8) | uint32_t(p[0]);
+}
+
+static uint16_t ReadU16LE(const uint8_t* p) {
+    return uint16_t(p[0]) | (uint16_t(p[1]) << 8);
+}
+
+static bool TryDecodeBsiPreviewTexture(const std::vector<uint8_t>& bytes, BsiPreviewTexture& out) {
+    out = {};
+    std::vector<uint8_t> hicl;
+    std::vector<uint8_t> cmap;
+    std::vector<uint8_t> data;
+    int width = 0, height = 0, frames = 1, flags = 0;
+
+    size_t i = 0;
+    while (i + 8 <= bytes.size()) {
+        const char* tag = reinterpret_cast<const char*>(bytes.data() + i);
+        uint32_t len = ReadU32BE(bytes.data() + i + 4);
+        size_t j = i + 8 + size_t(len);
+        if (j > bytes.size()) break;
+        const uint8_t* p = bytes.data() + i + 8;
+
+        if (memcmp(tag, "BHDR", 4) == 0 && len >= 30) {
+            width = int(ReadU16LE(p + 8));
+            height = int(ReadU16LE(p + 10));
+            frames = std::max(1, int(ReadU16LE(p + 18)));
+            flags = int(ReadU16LE(p + 28));
+        } else if (memcmp(tag, "HICL", 4) == 0) {
+            size_t off = (len >= 260 && ReadU32BE(p) == 256) ? 4 : 0;
+            if (len >= off + 256) hicl.assign(p + off, p + off + 256);
+        } else if (memcmp(tag, "CMAP", 4) == 0) {
+            size_t off = (len >= 772 && ReadU32BE(p) == 768) ? 4 : 0;
+            if (len >= off + 768) cmap.assign(p + off, p + off + 768);
+        } else if (memcmp(tag, "DATA", 4) == 0) {
+            size_t off = 0;
+            if (len >= 4) {
+                uint32_t n = ReadU32BE(p);
+                if (n <= len - 4) off = 4;
+            }
+            data.assign(p + off, p + len);
+        }
+
+        i = j;
+    }
+
+    if (width <= 0 || height <= 0 || data.empty()) return false;
+    const size_t rowCount = size_t(height) * size_t(std::max(1, frames));
+
+    if (flags == 0) {
+        size_t need = size_t(width) * rowCount;
+        if (data.size() < need) return false;
+        out.indices.assign(data.begin(), data.begin() + need);
+    } else if (flags == 4 || flags == 6) {
+        if (data.size() < rowCount * 4) return false;
+        out.indices.reserve(size_t(width) * rowCount);
+        for (size_t r = 0; r < rowCount; ++r) {
+            uint32_t idx = ReadU32LE(data.data() + r * 4);
+            bool compressed = (idx & 0x80000000u) != 0;
+            idx &= 0x7fffffffu;
+            if (idx >= data.size()) return false;
+            size_t cur = size_t(idx);
+            if (!compressed) {
+                if (cur + size_t(width) > data.size()) return false;
+                out.indices.insert(out.indices.end(), data.begin() + cur, data.begin() + cur + width);
+            } else {
+                int wrote = 0;
+                while (wrote < width && cur < data.size()) {
+                    uint8_t c = data[cur++];
+                    bool rle = (c & 0x80) != 0;
+                    int run = int(c & 0x7F);
+                    if (run <= 0) break;
+                    if (rle) {
+                        if (cur >= data.size()) return false;
+                        uint8_t pix = data[cur++];
+                        for (int k = 0; k < run && wrote < width; ++k, ++wrote) out.indices.push_back(pix);
+                    } else {
+                        if (cur + size_t(run) > data.size()) return false;
+                        for (int k = 0; k < run && wrote < width; ++k, ++wrote) out.indices.push_back(data[cur++]);
+                    }
+                }
+                if (wrote != width) return false;
+            }
+        }
+    } else {
+        return false;
+    }
+
+    out.width = width;
+    out.height = height * std::max(1, frames);
+
+    if (!hicl.empty()) {
+        out.hasPalette = true;
+        for (size_t pi = 0; pi < 128; ++pi) {
+            uint16_t c = ReadU16LE(hicl.data() + pi * 2);
+            uint8_t r = uint8_t(((c >> 11) & 0x1F) * 8);
+            uint8_t g = uint8_t(((c >> 6) & 0x1F) * 8);
+            uint8_t b = uint8_t(((c >> 1) & 0x1F) * 8);
+            out.palette[pi * 2] = RGB(r, g, b);
+            out.palette[pi * 2 + 1] = RGB(r, g, b);
+        }
+    } else if (cmap.size() >= 768) {
+        out.hasPalette = true;
+        for (size_t pi = 0; pi < 256; ++pi) {
+            uint8_t r = uint8_t(std::min(255, int(cmap[pi * 3 + 0]) * 4));
+            uint8_t g = uint8_t(std::min(255, int(cmap[pi * 3 + 1]) * 4));
+            uint8_t b = uint8_t(std::min(255, int(cmap[pi * 3 + 2]) * 4));
+            out.palette[pi] = RGB(r, g, b);
+        }
+    }
+
+    return !out.indices.empty();
+}
+
+
+static const std::unordered_map<std::string, std::string>& BoundTagToStem() {
+    static const auto s = LoadBoundTextureBindings();
+    return s;
+}
+
+static std::unordered_map<std::string, BsiPreviewTexture>& BsiTextureCache() {
+    static std::unordered_map<std::string, BsiPreviewTexture> s;
+    return s;
+}
+
+static std::vector<const battlespire::BsaArchive*>& TextureSourceArchives() {
+    static std::vector<const battlespire::BsaArchive*> s;
+    return s;
+}
+
+static void RefreshTextureSourceArchives(const std::vector<battlespire::BsaArchive>& archives) {
+    auto& out = TextureSourceArchives();
+    out.clear();
+    for (const auto& a : archives) {
+        std::wstring wn = a.sourcePath.filename().wstring();
+        for (auto& c : wn) c = (wchar_t)towlower(c);
+        if (wn == L"3d.bsa") continue;
+        if (wn.find(L"bsi") != std::wstring::npos || wn.find(L"img") != std::wstring::npos || wn.find(L"tex") != std::wstring::npos)
+            out.push_back(&a);
+    }
+}
+
+
+static bool TryDecodeBsiFromAnyOffset(const std::vector<uint8_t>& bytes, BsiPreviewTexture& out) {
+    if (TryDecodeBsiPreviewTexture(bytes, out)) return true;
+    for (size_t i = 0; i + 4 < bytes.size(); ++i) {
+        if (bytes[i] == 'B' && bytes[i + 1] == 'H' && bytes[i + 2] == 'D' && bytes[i + 3] == 'R') {
+            std::vector<uint8_t> slice(bytes.begin() + i, bytes.end());
+            if (TryDecodeBsiPreviewTexture(slice, out)) return true;
+        }
+    }
+    return false;
+}
+
+static const BsiPreviewTexture* TryGetTextureByStem(const std::string& stem) {
+    auto& cache = BsiTextureCache();
+    auto it = cache.find(stem);
+    if (it == cache.end()) {
+        BsiPreviewTexture tex{};
+        std::vector<uint8_t> bytes;
+
+        std::ifstream tf("batspire/bsi_extracted/" + stem + ".BSI", std::ios::binary);
+        if (tf) {
+            tf.seekg(0, std::ios::end);
+            size_t n = (size_t)tf.tellg();
+            tf.seekg(0, std::ios::beg);
+            bytes.resize(n);
+            if (n > 0) tf.read(reinterpret_cast<char*>(bytes.data()), (std::streamsize)n);
+            TryDecodeBsiFromAnyOffset(bytes, tex);
+        }
+
+        if (tex.indices.empty()) {
+            const std::string name = stem + ".BSI";
+            for (const auto* arc : TextureSourceArchives()) {
+                if (!arc) continue;
+                const auto* e = arc->FindEntryCaseInsensitive(name);
+                if (!e) continue;
+                std::wstring err;
+                std::vector<uint8_t> arcBytes;
+                if (!arc->ReadEntryData(*e, arcBytes, &err)) continue;
+                if (TryDecodeBsiFromAnyOffset(arcBytes, tex)) break;
+            }
+        }
+
+        it = cache.insert({ stem, std::move(tex) }).first;
+    }
+    if (it->second.indices.empty()) return nullptr;
+    return &it->second;
+}
+
+static const BsiPreviewTexture* TryGetTextureForFace(const std::array<uint8_t, 6>& tag, const std::string& stemHint) {
+    const std::string tagHex = TextureTagHex(tag);
+    const auto& bound = BoundTagToStem();
+    auto bt = bound.find(tagHex);
+    if (bt != bound.end()) {
+        if (const auto* t = TryGetTextureByStem(bt->second)) return t;
+    }
+    if (!stemHint.empty()) {
+        if (const auto* t = TryGetTextureByStem(stemHint)) return t;
+    }
+    return nullptr;
+}
+
+static COLORREF SampleTextureColorNearest(const BsiPreviewTexture& tex, float u, float v) {
+    if (tex.indices.empty() || tex.width <= 0 || tex.height <= 0) return RGB(120, 120, 120);
+    int tx = int(floorf(u)) % tex.width;
+    int ty = int(floorf(v)) % tex.height;
+    if (tx < 0) tx += tex.width;
+    if (ty < 0) ty += tex.height;
+    size_t idxPos = size_t(ty) * size_t(tex.width) + size_t(tx);
+    if (idxPos >= tex.indices.size()) idxPos %= tex.indices.size();
+    uint8_t idx = tex.indices[idxPos];
+    if (tex.hasPalette) return tex.palette[idx];
+    uint8_t c = uint8_t(24 + (idx * 3) / 4);
+    return RGB(c, c, c);
+}
+
+static COLORREF SampleTextureColorBilinear(const BsiPreviewTexture& tex, float u, float v) {
+    if (tex.indices.empty() || tex.width <= 0 || tex.height <= 0) return RGB(120, 120, 120);
+
+    auto wrap = [](int x, int m) -> int {
+        int r = x % m;
+        return r < 0 ? r + m : r;
+    };
+
+    int x0 = int(floorf(u));
+    int y0 = int(floorf(v));
+    float fu = u - floorf(u);
+    float fv = v - floorf(v);
+
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+
+    auto fetch = [&](int tx, int ty) -> COLORREF {
+        tx = wrap(tx, tex.width);
+        ty = wrap(ty, tex.height);
+        size_t idxPos = size_t(ty) * size_t(tex.width) + size_t(tx);
+        if (idxPos >= tex.indices.size()) idxPos %= tex.indices.size();
+        uint8_t idx = tex.indices[idxPos];
+        if (tex.hasPalette) return tex.palette[idx];
+        uint8_t c = uint8_t(24 + (idx * 3) / 4);
+        return RGB(c, c, c);
+    };
+
+    COLORREF c00 = fetch(x0, y0);
+    COLORREF c10 = fetch(x1, y0);
+    COLORREF c01 = fetch(x0, y1);
+    COLORREF c11 = fetch(x1, y1);
+
+    auto lerp = [](float a, float b, float t) -> float { return a + (b - a) * t; };
+    float r0 = lerp((float)GetRValue(c00), (float)GetRValue(c10), fu);
+    float g0 = lerp((float)GetGValue(c00), (float)GetGValue(c10), fu);
+    float b0 = lerp((float)GetBValue(c00), (float)GetBValue(c10), fu);
+    float r1 = lerp((float)GetRValue(c01), (float)GetRValue(c11), fu);
+    float g1 = lerp((float)GetGValue(c01), (float)GetGValue(c11), fu);
+    float b1 = lerp((float)GetBValue(c01), (float)GetBValue(c11), fu);
+
+    uint8_t r = (uint8_t)std::clamp(int(lerp(r0, r1, fv) + 0.5f), 0, 255);
+    uint8_t g = (uint8_t)std::clamp(int(lerp(g0, g1, fv) + 0.5f), 0, 255);
+    uint8_t b = (uint8_t)std::clamp(int(lerp(b0, b1, fv) + 0.5f), 0, 255);
+    return RGB(r, g, b);
+}
+
+static COLORREF SampleTextureColor(const BsiPreviewTexture& tex, float u, float v, bool bilinear) {
+    return bilinear ? SampleTextureColorBilinear(tex, u, v) : SampleTextureColorNearest(tex, u, v);
+}
 
 static std::wstring ToLowerCopy(std::wstring s) {
     for (auto& c : s) c = (wchar_t)towlower(c);
@@ -28,6 +352,419 @@ static std::wstring ToLowerCopy(std::wstring s) {
 
 static constexpr UINT IDM_BSA_DIALOGUE_SPEAK = 42001;
 static constexpr UINT IDM_BSA_ENTRY_SPEAK = 42002;
+
+static constexpr UINT WM_LVL_SET_SCENE = WM_APP + 120;
+
+struct PreviewFace {
+    std::vector<battlespire::Int3> worldPoints;
+    std::vector<POINT> uvs;
+    std::array<uint8_t, 6> textureTag{};
+    std::string textureStemHint;
+    bool hasUvTexture{ false };
+    COLORREF color{ RGB(180, 180, 180) };
+};
+
+struct LevelPreviewScene {
+    std::vector<battlespire::Int3> markers;
+    std::vector<battlespire::Bs6SceneBox> boxes;
+    std::vector<PreviewFace> modelFaces;
+    size_t modelInstances{};
+    size_t resolvedInstances{};
+    size_t missingInstances{};
+    std::wstring label;
+};
+
+struct LevelPreviewState {
+    HWND hwnd{};
+    std::unique_ptr<LevelPreviewScene> scene;
+    std::wstring status = L"Awaiting.....";
+    float camX = 0.0f;
+    float camY = 1600.0f;
+    float camZ = -3000.0f;
+    float yaw = 0.0f;
+    float pitch = 0.1f;
+    bool dragging = false;
+    POINT lastMouse{};
+    std::array<bool, 256> keys{};
+    bool bilinearSampling = false;
+};
+
+static void DrawTextBottomRight(HDC hdc, RECT rc, const std::wstring& text, COLORREF color) {
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, color);
+    RECT tr = rc;
+    tr.right -= 10;
+    tr.bottom -= 10;
+    DrawTextW(hdc, text.c_str(), -1, &tr, DT_RIGHT | DT_BOTTOM | DT_SINGLELINE);
+}
+
+static bool ProjectPoint(const LevelPreviewState& s, int w, int h, float x, float y, float z, POINT& out) {
+    float dx = x - s.camX;
+    float dy = y - s.camY;
+    float dz = z - s.camZ;
+
+    float cy = cosf(s.yaw), sy = sinf(s.yaw);
+    float cp = cosf(s.pitch), sp = sinf(s.pitch);
+
+    float x1 = cy * dx - sy * dz;
+    float z1 = sy * dx + cy * dz;
+    float y1 = cp * dy - sp * z1;
+    float z2 = sp * dy + cp * z1;
+
+    if (!std::isfinite(x1) || !std::isfinite(y1) || !std::isfinite(z2)) return false;
+    if (z2 < 1.0f || z2 > 200000.0f) return false;
+    float focal = (float)std::min(w, h) * 0.7f;
+    float sx = (x1 / z2) * focal;
+    float syProj = (y1 / z2) * focal;
+    if (!std::isfinite(sx) || !std::isfinite(syProj)) return false;
+    if (fabsf(sx) > 200000.0f || fabsf(syProj) > 200000.0f) return false;
+    out.x = int(w * 0.5f + sx);
+    out.y = int(h * 0.5f - syProj);
+    return true;
+}
+
+static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
+    HBRUSH bg = CreateSolidBrush(RGB(0, 0, 0));
+    FillRect(hdc, &rc, bg);
+    DeleteObject(bg);
+
+    if (!s.scene) {
+        DrawTextBottomRight(hdc, rc, s.status, RGB(180, 180, 180));
+        return;
+    }
+
+    int w = rc.right - rc.left;
+    int h = rc.bottom - rc.top;
+    if (w <= 1 || h <= 1) return;
+
+    std::vector<float> zBuffer;
+    zBuffer.assign(size_t(w) * size_t(h), 1.0e30f);
+
+    HPEN penBox = CreatePen(PS_SOLID, 1, RGB(60, 180, 255));
+    HPEN penPoint = CreatePen(PS_SOLID, 1, RGB(220, 220, 90));
+
+    auto drawLine3 = [&](const battlespire::Int3& a, const battlespire::Int3& b) {
+        POINT pa{}, pb{};
+        if (!ProjectPoint(s, w, h, (float)a.x, (float)a.y, (float)a.z, pa)) return;
+        if (!ProjectPoint(s, w, h, (float)b.x, (float)b.y, (float)b.z, pb)) return;
+        MoveToEx(hdc, pa.x, pa.y, nullptr);
+        LineTo(hdc, pb.x, pb.y);
+    };
+
+    SelectObject(hdc, penBox);
+    for (const auto& box : s.scene->boxes) {
+        const auto& c = box.corners;
+        drawLine3(c[0], c[1]); drawLine3(c[0], c[2]); drawLine3(c[0], c[3]);
+        drawLine3(c[4], c[1]); drawLine3(c[4], c[2]); drawLine3(c[4], c[3]);
+        drawLine3(c[5], c[1]); drawLine3(c[5], c[2]); drawLine3(c[5], c[3]);
+    }
+
+    struct DrawFace {
+        std::vector<POINT> pts;
+        std::vector<float> depths;
+        std::vector<POINT> uvs;
+        std::array<uint8_t, 6> textureTag{};
+        std::string textureStemHint;
+        bool hasUvTexture{ false };
+        float avgDepth{};
+        COLORREF color{};
+    };
+    std::vector<DrawFace> drawFaces;
+    drawFaces.reserve(s.scene->modelFaces.size());
+
+    auto depthFor = [&](float x, float y, float z, float& outDepth) -> bool {
+        float dx = x - s.camX;
+        float dy = y - s.camY;
+        float dz = z - s.camZ;
+        float cy = cosf(s.yaw), sy = sinf(s.yaw);
+        float cp = cosf(s.pitch), sp = sinf(s.pitch);
+        float x1 = cy * dx - sy * dz;
+        float z1 = sy * dx + cy * dz;
+        float y1 = cp * dy - sp * z1;
+        float z2 = sp * dy + cp * z1;
+        (void)x1; (void)y1;
+        outDepth = z2;
+        return z2 >= 1.0f;
+    };
+
+    for (const auto& face : s.scene->modelFaces) {
+        if (face.worldPoints.size() < 3) continue;
+
+        DrawFace df{};
+        df.color = face.color;
+        df.textureTag = face.textureTag;
+        df.textureStemHint = face.textureStemHint;
+        df.hasUvTexture = face.hasUvTexture;
+        df.pts.reserve(face.worldPoints.size());
+        df.depths.reserve(face.worldPoints.size());
+        if (face.hasUvTexture) df.uvs = face.uvs;
+
+        float depthSum = 0.0f;
+        bool clipped = false;
+        for (const auto& wp : face.worldPoints) {
+            POINT p{};
+            float d = 0.0f;
+            if (!ProjectPoint(s, w, h, (float)wp.x, (float)wp.y, (float)wp.z, p) || !depthFor((float)wp.x, (float)wp.y, (float)wp.z, d)) {
+                clipped = true;
+                break;
+            }
+            depthSum += d;
+            df.pts.push_back(p);
+            df.depths.push_back(d);
+        }
+
+        if (clipped || df.pts.size() < 3) continue;
+        df.avgDepth = depthSum / (float)df.pts.size();
+        drawFaces.push_back(std::move(df));
+    }
+
+    std::stable_sort(drawFaces.begin(), drawFaces.end(), [](const DrawFace& a, const DrawFace& b) {
+        return a.avgDepth > b.avgDepth;
+    });
+
+    for (const auto& df : drawFaces) {
+        const auto* tex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForFace(df.textureTag, df.textureStemHint) : nullptr;
+        if (tex && df.pts.size() >= 3) {
+            for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
+                const POINT p0 = df.pts[0], p1 = df.pts[ti], p2 = df.pts[ti + 1];
+                const POINT t0 = df.uvs[0], t1 = df.uvs[ti], t2 = df.uvs[ti + 1];
+                const float z0 = df.depths[0], z1 = df.depths[ti], z2 = df.depths[ti + 1];
+
+                auto normalizeUv = [](float uv, int texDim) -> float {
+                    if (texDim <= 0) return uv;
+                    float lim = float(texDim) * 16.0f;
+                    if (fabsf(uv) > lim) uv /= 256.0f;
+                    return uv;
+                };
+
+                const float u0 = normalizeUv((float)t0.x, tex->width);
+                const float v0 = normalizeUv((float)t0.y, tex->height);
+                const float u1 = normalizeUv((float)t1.x, tex->width);
+                const float v1 = normalizeUv((float)t1.y, tex->height);
+                const float u2 = normalizeUv((float)t2.x, tex->width);
+                const float v2 = normalizeUv((float)t2.y, tex->height);
+
+                const float iz0 = 1.0f / std::max(0.01f, z0);
+                const float iz1 = 1.0f / std::max(0.01f, z1);
+                const float iz2 = 1.0f / std::max(0.01f, z2);
+                const float uiz0 = u0 * iz0, viz0 = v0 * iz0;
+                const float uiz1 = u1 * iz1, viz1 = v1 * iz1;
+                const float uiz2 = u2 * iz2, viz2 = v2 * iz2;
+
+                LONG triMinX = std::min(std::min(p0.x, p1.x), p2.x);
+                LONG triMaxX = std::max(std::max(p0.x, p1.x), p2.x);
+                LONG triMinY = std::min(std::min(p0.y, p1.y), p2.y);
+                LONG triMaxY = std::max(std::max(p0.y, p1.y), p2.y);
+
+                int minx = std::max(0, (int)triMinX);
+                int maxx = std::min(w - 1, (int)triMaxX);
+                int miny = std::max(0, (int)triMinY);
+                int maxy = std::min(h - 1, (int)triMaxY);
+                if (minx > maxx || miny > maxy) continue;
+                if ((maxx - minx) > w * 3 || (maxy - miny) > h * 3) continue;
+
+                float den = float((p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y));
+                if (!std::isfinite(den) || fabsf(den) < 1e-5f) continue;
+
+                for (int y = miny; y <= maxy; ++y) {
+                    for (int x = minx; x <= maxx; ++x) {
+                        float w0 = float((p1.y - p2.y) * (x - p2.x) + (p2.x - p1.x) * (y - p2.y)) / den;
+                        float w1 = float((p2.y - p0.y) * (x - p2.x) + (p0.x - p2.x) * (y - p2.y)) / den;
+                        float w2 = 1.0f - w0 - w1;
+                        if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
+
+                        float z = w0 * z0 + w1 * z1 + w2 * z2;
+                        if (!std::isfinite(z) || z < 0.01f) continue;
+
+                        size_t zidx = size_t(y) * size_t(w) + size_t(x);
+                        if (zidx >= zBuffer.size()) continue;
+                        if (z >= zBuffer[zidx]) continue;
+
+                        float iz = w0 * iz0 + w1 * iz1 + w2 * iz2;
+                        if (!std::isfinite(iz) || fabsf(iz) < 1e-8f) continue;
+
+                        float u = (w0 * uiz0 + w1 * uiz1 + w2 * uiz2) / iz;
+                        float v = (w0 * viz0 + w1 * viz1 + w2 * viz2) / iz;
+                        if (!std::isfinite(u) || !std::isfinite(v)) continue;
+
+                        zBuffer[zidx] = z;
+                        SetPixelV(hdc, x, y, SampleTextureColor(*tex, u, v, s.bilinearSampling));
+                    }
+                }
+            }
+
+            const COLORREF outline = RGB(GetRValue(df.color) / 3, GetGValue(df.color) / 3, GetBValue(df.color) / 3);
+            HPEN facePen = CreatePen(PS_SOLID, 1, outline);
+            HGDIOBJ oldPen = SelectObject(hdc, facePen);
+            HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+            Polygon(hdc, df.pts.data(), (int)df.pts.size());
+            SelectObject(hdc, oldPen);
+            SelectObject(hdc, oldBrush);
+            DeleteObject(facePen);
+        }
+        else if (df.pts.size() >= 3 && df.depths.size() == df.pts.size()) {
+            for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
+                const POINT p0 = df.pts[0], p1 = df.pts[ti], p2 = df.pts[ti + 1];
+                const float z0 = df.depths[0], z1 = df.depths[ti], z2 = df.depths[ti + 1];
+
+                LONG triMinX = std::min(std::min(p0.x, p1.x), p2.x);
+                LONG triMaxX = std::max(std::max(p0.x, p1.x), p2.x);
+                LONG triMinY = std::min(std::min(p0.y, p1.y), p2.y);
+                LONG triMaxY = std::max(std::max(p0.y, p1.y), p2.y);
+
+                int minx = std::max(0, (int)triMinX);
+                int maxx = std::min(w - 1, (int)triMaxX);
+                int miny = std::max(0, (int)triMinY);
+                int maxy = std::min(h - 1, (int)triMaxY);
+                if (minx > maxx || miny > maxy) continue;
+
+                float den = float((p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y));
+                if (!std::isfinite(den) || fabsf(den) < 1e-5f) continue;
+
+                for (int y = miny; y <= maxy; ++y) {
+                    for (int x = minx; x <= maxx; ++x) {
+                        float w0 = float((p1.y - p2.y) * (x - p2.x) + (p2.x - p1.x) * (y - p2.y)) / den;
+                        float w1 = float((p2.y - p0.y) * (x - p2.x) + (p0.x - p2.x) * (y - p2.y)) / den;
+                        float w2 = 1.0f - w0 - w1;
+                        if (w0 < 0.0f || w1 < 0.0f || w2 < 0.0f) continue;
+
+                        float z = w0 * z0 + w1 * z1 + w2 * z2;
+                        if (!std::isfinite(z) || z < 0.01f) continue;
+
+                        size_t zidx = size_t(y) * size_t(w) + size_t(x);
+                        if (zidx >= zBuffer.size()) continue;
+                        if (z >= zBuffer[zidx]) continue;
+
+                        zBuffer[zidx] = z;
+                        SetPixelV(hdc, x, y, df.color);
+                    }
+                }
+            }
+
+            const COLORREF outline = RGB(GetRValue(df.color) / 2, GetGValue(df.color) / 2, GetBValue(df.color) / 2);
+            HPEN facePen = CreatePen(PS_SOLID, 1, outline);
+            HGDIOBJ oldPen = SelectObject(hdc, facePen);
+            HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+            Polygon(hdc, df.pts.data(), (int)df.pts.size());
+            SelectObject(hdc, oldPen);
+            SelectObject(hdc, oldBrush);
+            DeleteObject(facePen);
+        }
+    }
+
+    SelectObject(hdc, penPoint);
+    for (const auto& m : s.scene->markers) {
+        POINT p{};
+        if (!ProjectPoint(s, w, h, (float)m.x, (float)m.y, (float)m.z, p)) continue;
+        Rectangle(hdc, p.x - 2, p.y - 2, p.x + 2, p.y + 2);
+    }
+
+    DeleteObject(penBox);
+    DeleteObject(penPoint);
+
+    std::wstring msg = s.scene->label + L"  models " + std::to_wstring(s.scene->resolvedInstances) + L"/" + std::to_wstring(s.scene->modelInstances) + L"  (WASD move, click+drag rotate, B toggle bilinear, z-tested perspective UV raster)";
+    DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
+}
+
+static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    auto* s = reinterpret_cast<LevelPreviewState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    switch (msg) {
+    case WM_CREATE: {
+        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        s = reinterpret_cast<LevelPreviewState*>(cs->lpCreateParams);
+        s->hwnd = hwnd;
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)s);
+        SetTimer(hwnd, 1, 16, nullptr);
+        return 0;
+    }
+    case WM_DESTROY:
+        KillTimer(hwnd, 1);
+        return 0;
+    case WM_NCDESTROY:
+        if (s) {
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+            delete s;
+        }
+        return 0;
+    case WM_LVL_SET_SCENE:
+        if (s) {
+            std::unique_ptr<LevelPreviewScene> scene(reinterpret_cast<LevelPreviewScene*>(wParam));
+            if (!scene || (scene->markers.empty() && scene->boxes.empty() && scene->modelFaces.empty())) {
+                s->scene.reset();
+                s->status = scene && !scene->label.empty() ? scene->label : L"Awaiting.....";
+            }
+            else {
+                s->status = L"Loaded";
+                s->scene = std::move(scene);
+            }
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+    case WM_KEYDOWN:
+        if (s && wParam < s->keys.size()) s->keys[wParam] = true;
+        if (s && (wParam == 'B' || wParam == 'b')) s->bilinearSampling = !s->bilinearSampling;
+        return 0;
+    case WM_KEYUP:
+        if (s && wParam < s->keys.size()) s->keys[wParam] = false;
+        return 0;
+    case WM_LBUTTONDOWN:
+        if (s) {
+            SetFocus(hwnd);
+            SetCapture(hwnd);
+            s->dragging = true;
+            s->lastMouse.x = GET_X_LPARAM(lParam);
+            s->lastMouse.y = GET_Y_LPARAM(lParam);
+        }
+        return 0;
+    case WM_LBUTTONUP:
+        if (s) {
+            s->dragging = false;
+            ReleaseCapture();
+        }
+        return 0;
+    case WM_MOUSEMOVE:
+        if (s && s->dragging) {
+            POINT p{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            int dx = p.x - s->lastMouse.x;
+            int dy = p.y - s->lastMouse.y;
+            s->lastMouse = p;
+            s->yaw += dx * 0.005f;
+            s->pitch -= dy * 0.005f;
+            if (s->pitch > 1.5f) s->pitch = 1.5f;
+            if (s->pitch < -1.5f) s->pitch = -1.5f;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+    case WM_TIMER:
+        if (s) {
+            float speed = 50.0f;
+            float fy = cosf(s->yaw), fx = sinf(s->yaw);
+            if (s->keys['W']) { s->camX += fx * speed; s->camZ += fy * speed; }
+            if (s->keys['S']) { s->camX -= fx * speed; s->camZ -= fy * speed; }
+            if (s->keys['A']) { s->camX -= fy * speed; s->camZ += fx * speed; }
+            if (s->keys['D']) { s->camX += fy * speed; s->camZ -= fx * speed; }
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT:
+        if (s) {
+            PAINTSTRUCT ps{};
+            HDC hdc = BeginPaint(hwnd, &ps);
+            RECT rc{};
+            GetClientRect(hwnd, &rc);
+            DrawLevelScene(*s, hdc, rc);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        break;
+    default:
+        break;
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
 
 
 struct DialogueCodeParts {
@@ -189,6 +926,39 @@ static bool IsLikelyUtf8Printable(const std::vector<uint8_t>& bytes) {
         else printable++;
     }
     return control * 8 < sample;
+}
+
+
+static std::wstring BuildBs6SummaryPreview(const battlespire::Bs6FileSummary& s) {
+    std::wstring out = L"BS6 level summary\r\n";
+    out += L"Chunks: " + std::to_wstring(s.chunks.size()) + L"\r\n\r\n";
+    const size_t show = std::min<size_t>(s.chunks.size(), 128);
+    for (size_t i = 0; i < show; ++i) {
+        wchar_t line[256]{};
+        std::wstring name = winutil::WidenUtf8(s.chunks[i].name);
+        swprintf_s(line, L"%03zu  %s  len=%u\r\n", i, name.c_str(), (unsigned)s.chunks[i].length);
+        out += line;
+    }
+    if (s.chunks.size() > show) out += L"...\r\n";
+    return out;
+}
+
+static std::wstring BuildB3dSummaryPreview(const battlespire::B3dFileSummary& s) {
+    std::wstring out = L"3D model summary\r\n";
+    out += L"Version: ";
+    out += winutil::WidenUtf8(s.version);
+    out += L"\r\n";
+    out += L"Points: " + std::to_wstring(s.pointCount) + L"\r\n";
+    out += L"Planes: " + std::to_wstring(s.planeCount) + L"\r\n";
+    out += L"Objects: " + std::to_wstring(s.objectCount) + L"\r\n";
+    out += L"Radius: " + std::to_wstring(s.radius) + L"\r\n\r\n";
+
+    wchar_t line[128]{};
+    swprintf_s(line, L"pointListOffset: 0x%X\r\n", (unsigned)s.pointListOffset); out += line;
+    swprintf_s(line, L"normalListOffset: 0x%X\r\n", (unsigned)s.normalListOffset); out += line;
+    swprintf_s(line, L"planeDataOffset: 0x%X\r\n", (unsigned)s.planeDataOffset); out += line;
+    swprintf_s(line, L"planeListOffset: 0x%X\r\n", (unsigned)s.planeListOffset); out += line;
+    return out;
 }
 
 static std::wstring HexDumpPreview(const std::vector<uint8_t>& bytes, size_t maxBytes = 256) {
@@ -835,6 +1605,20 @@ bool MainWindow::OnCreate() {
     m_status = CreateWindowExW(0, STATUSCLASSNAMEW, nullptr,
         WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, m_hwnd, (HMENU)(INT_PTR)IDC_STATUS_BAR, GetModuleHandleW(nullptr), nullptr);
 
+    WNDCLASSW wc{};
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = L"DaggerfallCS_LevelPreview";
+    wc.lpfnWndProc = LevelPreviewWndProc;
+    wc.hCursor = LoadCursorW(nullptr, IDC_CROSS);
+    wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    RegisterClassW(&wc);
+
+    auto* previewState = new LevelPreviewState();
+    m_levelPreview = CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"Level Preview",
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        CW_USEDEFAULT, CW_USEDEFAULT, 960, 640,
+        m_hwnd, nullptr, GetModuleHandleW(nullptr), previewState);
+
     m_splitLR.Attach(m_hwnd, m_tree, m_list);
     m_splitLR.SetRatio(0.28);
 
@@ -857,6 +1641,10 @@ bool MainWindow::OnCreate() {
 void MainWindow::OnDestroy() {
     EndListPreviewEdit(true);
     SaveIndicesOverrides();
+    if (m_levelPreview && IsWindow(m_levelPreview)) {
+        DestroyWindow(m_levelPreview);
+        m_levelPreview = nullptr;
+    }
     PostQuitMessage(0);
 }
 
@@ -925,6 +1713,172 @@ void MainWindow::OnCommand(WORD id) {
 
 void MainWindow::SetStatus(const std::wstring& s) {
     winutil::SetStatusText(m_status, s);
+}
+
+
+void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const std::wstring& label) {
+    if (!m_levelPreview || !IsWindow(m_levelPreview)) return;
+
+    RefreshTextureSourceArchives(m_bsaArchives);
+
+    auto payload = std::make_unique<LevelPreviewScene>();
+    payload->label = label;
+    if (scene) {
+        payload->markers = scene->markers;
+        payload->boxes = scene->boxes;
+
+        auto* modelsArchive = [&]() -> const battlespire::BsaArchive* {
+            for (const auto& a : m_bsaArchives) {
+                if (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"3D.BSA") == 0) return &a;
+            }
+            return nullptr;
+        }();
+
+        if (modelsArchive) {
+            std::unordered_map<std::string, battlespire::B3dMesh> meshCache;
+
+            auto colorFromTextureTag = [](const std::array<uint8_t, 6>& t, const std::string& stemHint) -> COLORREF {
+                if (const auto* tex = TryGetTextureForFace(t, stemHint)) {
+                    uint32_t h = 2166136261u;
+                    for (uint8_t bt : t) h = (h ^ bt) * 16777619u;
+                    float u = float((h >> 8) % std::max(1, tex->width));
+                    float v = float((h >> 16) % std::max(1, tex->height));
+                    return SampleTextureColor(*tex, u, v, false);
+                }
+
+                bool allZero = true;
+                uint32_t h = 2166136261u;
+                for (uint8_t bt : t) {
+                    if (bt != 0) allZero = false;
+                    h = (h ^ bt) * 16777619u;
+                }
+                if (allZero) return RGB(100, 100, 100);
+
+                uint8_t r = uint8_t(32 + (h & 0xBF));
+                uint8_t g = uint8_t(32 + ((h >> 8) & 0xBF));
+                uint8_t b = uint8_t(32 + ((h >> 16) & 0xBF));
+                if (r > 150 && b > 150 && g < 120) {
+                    g = uint8_t(std::min(255, (int)g + 90));
+                }
+                return RGB(r, g, b);
+            };
+
+            auto applyTransform = [](const battlespire::Int3& v, const battlespire::Bs6ModelInstance& inst, battlespire::Int3& out) -> bool {
+                const float kAngleScale = 6.28318530718f / 2048.0f;
+                const float kMaxCoord = 2000000.0f;
+                float sx = std::clamp((float)inst.scale / 1024.0f, -32.0f, 32.0f);
+                float x = (float)v.x * sx;
+                float y = (float)v.y * sx;
+                float z = (float)v.z * sx;
+
+                float yaw = inst.angles.y * kAngleScale;
+                float pitch = inst.angles.x * kAngleScale;
+                float roll = inst.angles.z * kAngleScale;
+
+                float cy = cosf(yaw), sy = sinf(yaw);
+                float cp = cosf(pitch), sp = sinf(pitch);
+                float cr = cosf(roll), sr = sinf(roll);
+
+                float x1 = cy * x + sy * z;
+                float z1 = -sy * x + cy * z;
+                float y2 = cp * y - sp * z1;
+                float z2 = sp * y + cp * z1;
+                float x3 = cr * x1 - sr * y2;
+                float y3 = sr * x1 + cr * y2;
+
+                if (!std::isfinite(x3) || !std::isfinite(y3) || !std::isfinite(z2)) return false;
+
+                x3 += inst.position.x;
+                y3 += inst.position.y;
+                z2 += inst.position.z;
+                if (fabsf(x3) > kMaxCoord || fabsf(y3) > kMaxCoord || fabsf(z2) > kMaxCoord) return false;
+
+                out.x = (int32_t)std::lround(x3);
+                out.y = (int32_t)std::lround(y3);
+                out.z = (int32_t)std::lround(z2);
+                return true;
+            };
+
+            payload->modelInstances = scene->models.size();
+            std::unordered_set<std::string> missingNames;
+
+            for (const auto& inst : scene->models) {
+                std::string modelKey = inst.modelName;
+                for (auto& c : modelKey) c = (char)toupper((unsigned char)c);
+                if (!modelKey.empty() && modelKey.find('.') == std::string::npos) modelKey += ".3D";
+                std::string modelStem = modelKey;
+                size_t modelDot = modelStem.find('.');
+                if (modelDot != std::string::npos) modelStem = modelStem.substr(0, modelDot);
+
+                auto resolveEntry = [&](const std::string& key) -> const battlespire::BsaEntry* {
+                    const auto* e = modelsArchive->FindEntryCaseInsensitive(key);
+                    if (e) return e;
+                    size_t slash = key.find_last_of("/\\");
+                    if (slash != std::string::npos) {
+                        std::string bn = key.substr(slash + 1);
+                        e = modelsArchive->FindEntryCaseInsensitive(bn);
+                        if (e) return e;
+                    }
+                    size_t dot = key.find('.');
+                    if (dot != std::string::npos) {
+                        std::string stem = key.substr(0, dot);
+                        e = modelsArchive->FindEntryCaseInsensitive(stem + ".3D");
+                        if (e) return e;
+                    }
+                    return nullptr;
+                };
+
+                auto mit = meshCache.find(modelKey);
+                if (mit == meshCache.end()) {
+                    const auto* entry = resolveEntry(modelKey);
+                    if (!entry) {
+                        missingNames.insert(modelKey);
+                        continue;
+                    }
+                    std::vector<uint8_t> bytes;
+                    std::wstring err;
+                    if (!modelsArchive->ReadEntryData(*entry, bytes, &err)) {
+                        missingNames.insert(modelKey);
+                        continue;
+                    }
+                    battlespire::B3dMesh mesh;
+                    if (!battlespire::B3dMesh::TryParse(bytes, mesh, &err)) {
+                        missingNames.insert(modelKey);
+                        continue;
+                    }
+                    mit = meshCache.insert({ modelKey, std::move(mesh) }).first;
+                }
+
+                payload->resolvedInstances++;
+                const auto& mesh = mit->second;
+                for (const auto& face : mesh.faces) {
+                    PreviewFace pf{};
+                    pf.color = colorFromTextureTag(face.textureTag, modelStem);
+                    pf.textureTag = face.textureTag;
+                    pf.textureStemHint = modelStem;
+                    pf.hasUvTexture = (face.uvs.size() == face.pointIndices.size() && !face.uvs.empty());
+                    if (pf.hasUvTexture) {
+                        pf.uvs.reserve(face.uvs.size());
+                        for (const auto& uv : face.uvs) pf.uvs.push_back({ (LONG)uv.u, (LONG)uv.v });
+                    }
+                    for (uint32_t pi : face.pointIndices) {
+                        if (pi >= mesh.points.size()) continue;
+                        battlespire::Int3 wp{};
+                        if (!applyTransform(mesh.points[pi], inst, wp)) continue;
+                        pf.worldPoints.push_back(wp);
+                    }
+                    if (pf.worldPoints.size() >= 3) payload->modelFaces.push_back(std::move(pf));
+                }
+            }
+
+            payload->missingInstances = payload->modelInstances - payload->resolvedInstances;
+            if (payload->missingInstances > 0 && !missingNames.empty()) {
+                payload->label += L"  missing:" + std::to_wstring(payload->missingInstances);
+            }
+        }
+    }
+
+    PostMessageW(m_levelPreview, WM_LVL_SET_SCENE, (WPARAM)payload.release(), 0);
 }
 
 void MainWindow::PopulateTree() {
@@ -1049,6 +2003,8 @@ void MainWindow::StartTreeBuild() {
             };
 
             const bool isFlcBsa = (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"FLC.BSA") == 0);
+            const bool isBs6Bsa = (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"BS6.BSA") == 0);
+            const bool is3dBsa = (_wcsicmp(a.sourcePath.filename().wstring().c_str(), L"3D.BSA") == 0);
             if (isFlcBsa) {
                 std::vector<size_t> dialogueFlc;
                 std::vector<size_t> otherFlc;
@@ -1082,6 +2038,29 @@ void MainWindow::StartTreeBuild() {
 
                 insCat(L"Dialogue Voice Clips", dialogueFlc);
                 insCat(L"Other FLC Audio", otherFlc);
+                continue;
+            }
+
+            if (isBs6Bsa || is3dBsa) {
+                std::vector<size_t> sorted;
+                sorted.reserve(a.entries.size());
+                for (size_t ei = 0; ei < a.entries.size(); ++ei) sorted.push_back(ei);
+                std::stable_sort(sorted.begin(), sorted.end(), [&](size_t lhs, size_t rhs) {
+                    std::wstring ln = BaseNameOnly(winutil::WidenUtf8(a.entries[lhs].name));
+                    std::wstring rn = BaseNameOnly(winutil::WidenUtf8(a.entries[rhs].name));
+                    return ln < rn;
+                });
+
+                std::wstring cat = isBs6Bsa ? L"Level Files (.BS6)" : L"Model Files (.3D)";
+                cat += L" (" + std::to_wstring(sorted.size()) + L")";
+
+                TVINSERTSTRUCTW cins{};
+                cins.hParent = ah;
+                cins.hInsertAfter = TVI_LAST;
+                cins.item.mask = TVIF_TEXT;
+                cins.item.pszText = const_cast<wchar_t*>(cat.c_str());
+                HTREEITEM ch = (HTREEITEM)SendMessageW(m_tree, TVM_INSERTITEMW, 0, (LPARAM)&cins);
+                for (size_t ei : sorted) insertEntryNode(ch, ei);
                 continue;
             }
 
@@ -1160,11 +2139,11 @@ void MainWindow::StartTreeBuild() {
 
 
                 if (IsMagicCategoryName(cat)) {
-                    TVITEMW ti{};
-                    ti.mask = TVIF_PARAM | TVIF_HANDLE;
-                    ti.hItem = ch;
-                    ti.lParam = (LPARAM)AddPayload(TreePayload::Kind::BsaMagicCombined, 0, (size_t)-1, ai, (size_t)-1);
-                    TreeView_SetItem(m_tree, &ti);
+                    TVITEMW tvi{};
+                    tvi.mask = TVIF_PARAM | TVIF_HANDLE;
+                    tvi.hItem = ch;
+                    tvi.lParam = (LPARAM)AddPayload(TreePayload::Kind::BsaMagicCombined, 0, (size_t)-1, ai, (size_t)-1);
+                    TreeView_SetItem(m_tree, &tvi);
                     continue;
                 }
 
@@ -1700,6 +2679,8 @@ void MainWindow::OnTreeSelChanged() {
     auto* p = GetSelectedPayload();
     if (!p) return;
 
+    SendLevelToPreview(nullptr, L"Awaiting.....");
+
     m_bsaDialogueKind = BsaDialogueKind::None;
     m_bsaDialogueRows.clear();
     m_bsaDialogueHeaders.clear();
@@ -1808,6 +2789,38 @@ void MainWindow::OnTreeSelChanged() {
 
         std::wstring preview;
         bool renderedTable = false;
+
+        std::wstring entryNameLower = ToLowerWs(winutil::WidenUtf8(e.name));
+        bool looksLikeBs6 = EndsWithWs(entryNameLower, L".bs6");
+        bool looksLike3d = EndsWithWs(entryNameLower, L".3d");
+        if (looksLikeBs6) {
+            battlespire::Bs6FileSummary bs6;
+            std::wstring perr;
+            if (battlespire::Bs6FileSummary::TrySummarize(bytes, bs6, &perr)) {
+                SetWindowTextW(m_preview, BuildBs6SummaryPreview(bs6).c_str());
+
+                battlespire::Bs6Scene scene;
+                std::wstring serr;
+                if (battlespire::Bs6Scene::TryBuildFromBytes(bytes, scene, &serr)) {
+                    SendLevelToPreview(&scene, winutil::WidenUtf8(e.name));
+                } else {
+                    SendLevelToPreview(nullptr, L"Awaiting.....");
+                }
+
+                m_viewMode = ViewMode::BsaEntry;
+                return;
+            }
+        }
+        else if (looksLike3d) {
+            battlespire::B3dFileSummary b3d;
+            std::wstring perr;
+            if (battlespire::B3dFileSummary::TryParse(bytes, b3d, &perr)) {
+                SetWindowTextW(m_preview, BuildB3dSummaryPreview(b3d).c_str());
+                m_viewMode = ViewMode::BsaEntry;
+                return;
+            }
+        }
+
         if (IsLikelyUtf8Printable(bytes)) {
             std::wstring nameLow = ToLowerWs(winutil::WidenUtf8(e.name));
             std::string text(bytes.begin(), bytes.end());

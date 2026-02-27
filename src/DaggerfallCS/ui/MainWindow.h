@@ -71,6 +71,7 @@ private:
     HWND m_preview{};
     HWND m_tabs{};
     HWND m_status{};
+    HWND m_levelPreview{};
 
     // In-place editing for list Preview cells (non-persistent per-subrecord override layer)
     HWND m_inplaceEdit{};
@@ -200,6 +201,7 @@ private:
     void CmdExportTes4QuestDialogue();
 
     void SetStatus(const std::wstring& s);
+    void SendLevelToPreview(const battlespire::Bs6Scene* scene, const std::wstring& label);
 };
 
 } // namespace ui
