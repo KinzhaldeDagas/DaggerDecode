@@ -1,0 +1,225 @@
+{
+  "correlations": {
+    "flad_vs_litd": 0.786559676032053,
+    "litd_vs_ambi": 0.786559676032053,
+    "litd_vs_brit": 1.0,
+    "rawd_vs_ambi": 0.9200346376098585,
+    "rawd_vs_litd": 0.8220893375054797
+  },
+  "files": 45,
+  "payload_concentration": [
+    {
+      "chunk": "AMBI",
+      "distinct_payload_lens": 1,
+      "top3_payload_share": 1.0,
+      "top_payload_count": 2452,
+      "top_payload_len": 4,
+      "top_payload_share": 1.0,
+      "total_rows": 2452
+    },
+    {
+      "chunk": "BRIT",
+      "distinct_payload_lens": 1,
+      "top3_payload_share": 1.0,
+      "top_payload_count": 1499,
+      "top_payload_len": 4,
+      "top_payload_share": 1.0,
+      "total_rows": 1499
+    },
+    {
+      "chunk": "FLAD",
+      "distinct_payload_lens": 27,
+      "top3_payload_share": 0.828345,
+      "top_payload_count": 1437,
+      "top_payload_len": 336,
+      "top_payload_share": 0.632482,
+      "total_rows": 2272
+    },
+    {
+      "chunk": "FLAS",
+      "distinct_payload_lens": 42,
+      "top3_payload_share": 0.133333,
+      "top_payload_count": 2,
+      "top_payload_len": 3472,
+      "top_payload_share": 0.044444,
+      "total_rows": 45
+    },
+    {
+      "chunk": "LITD",
+      "distinct_payload_lens": 2,
+      "top3_payload_share": 1.0,
+      "top_payload_count": 1497,
+      "top_payload_len": 80,
+      "top_payload_share": 0.998666,
+      "total_rows": 1499
+    },
+    {
+      "chunk": "LITS",
+      "distinct_payload_lens": 23,
+      "top3_payload_share": 0.311111,
+      "top_payload_count": 6,
+      "top_payload_len": 352,
+      "top_payload_share": 0.133333,
+      "total_rows": 45
+    },
+    {
+      "chunk": "RAWD",
+      "distinct_payload_lens": 8,
+      "top3_payload_share": 0.612725,
+      "top_payload_count": 1683,
+      "top_payload_len": 4,
+      "top_payload_share": 0.290975,
+      "total_rows": 5784
+    }
+  ],
+  "source_manifest": {
+    "bs6_files_scanned": 45,
+    "global_chunk_counts": {
+      "AMBI": 2452,
+      "BRIT": 1499,
+      "FLAD": 2272,
+      "FLAS": 45,
+      "LITD": 1499,
+      "LITS": 45,
+      "RAWD": 5784
+    },
+    "scalar_probe": {
+      "AMBI": {
+        "max": 60000,
+        "min": 0,
+        "samples": 2452
+      },
+      "BRIT": {
+        "max": 1023,
+        "min": 11,
+        "samples": 1499
+      },
+      "FLAD": {
+        "max": 2003659878,
+        "min": -19331,
+        "samples": 213431
+      },
+      "FLAS": {
+        "max": 2003659878,
+        "min": -19331,
+        "samples": 217975
+      },
+      "LITD": {
+        "max": 1498694729,
+        "min": -19443,
+        "samples": 30010
+      },
+      "LITS": {
+        "max": 1498694729,
+        "min": -19443,
+        "samples": 33008
+      },
+      "RAWD": {
+        "max": 1936280870,
+        "min": -17150,
+        "samples": 27056
+      }
+    }
+  },
+  "top_lighting_files": [
+    {
+      "file": "L4_OLD.BS6",
+      "lighting_total": 718,
+      "rawd_count": 500,
+      "rawd_to_lighting_ratio": 0.6963788300835655
+    },
+    {
+      "file": "L6.BS6",
+      "lighting_total": 640,
+      "rawd_count": 708,
+      "rawd_to_lighting_ratio": 1.10625
+    },
+    {
+      "file": "FIXIT.BS6",
+      "lighting_total": 632,
+      "rawd_count": 682,
+      "rawd_to_lighting_ratio": 1.0791139240506329
+    },
+    {
+      "file": "L2.BS6",
+      "lighting_total": 606,
+      "rawd_count": 331,
+      "rawd_to_lighting_ratio": 0.5462046204620462
+    },
+    {
+      "file": "L3.BS6",
+      "lighting_total": 548,
+      "rawd_count": 394,
+      "rawd_to_lighting_ratio": 0.718978102189781
+    },
+    {
+      "file": "L1.BS6",
+      "lighting_total": 530,
+      "rawd_count": 517,
+      "rawd_to_lighting_ratio": 0.9754716981132076
+    },
+    {
+      "file": "L7.BS6",
+      "lighting_total": 446,
+      "rawd_count": 306,
+      "rawd_to_lighting_ratio": 0.6860986547085202
+    },
+    {
+      "file": "L4.BS6",
+      "lighting_total": 444,
+      "rawd_count": 441,
+      "rawd_to_lighting_ratio": 0.9932432432432432
+    },
+    {
+      "file": "L12.BS6",
+      "lighting_total": 372,
+      "rawd_count": 190,
+      "rawd_to_lighting_ratio": 0.510752688172043
+    },
+    {
+      "file": "L5.BS6",
+      "lighting_total": 366,
+      "rawd_count": 297,
+      "rawd_to_lighting_ratio": 0.8114754098360656
+    },
+    {
+      "file": "DMNN.BS6",
+      "lighting_total": 230,
+      "rawd_count": 39,
+      "rawd_to_lighting_ratio": 0.16956521739130434
+    },
+    {
+      "file": "L8.BS6",
+      "lighting_total": 230,
+      "rawd_count": 365,
+      "rawd_to_lighting_ratio": 1.5869565217391304
+    },
+    {
+      "file": "DMKK.BS6",
+      "lighting_total": 202,
+      "rawd_count": 139,
+      "rawd_to_lighting_ratio": 0.6881188118811881
+    },
+    {
+      "file": "CATCOM.BS6",
+      "lighting_total": 160,
+      "rawd_count": 29,
+      "rawd_to_lighting_ratio": 0.18125
+    },
+    {
+      "file": "L11.BS6",
+      "lighting_total": 128,
+      "rawd_count": 15,
+      "rawd_to_lighting_ratio": 0.1171875
+    }
+  ],
+  "totals": {
+    "ambi_count": 2452,
+    "brit_count": 1499,
+    "flad_count": 2272,
+    "flas_count": 45,
+    "litd_count": 1499,
+    "lits_count": 45,
+    "rawd_count": 5784
+  }
+}

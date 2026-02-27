@@ -1,0 +1,14 @@
+{
+  "bound_face_ratio": 0.0021446487673835286,
+  "bound_face_ratio_nonzero": 0.027650210486031383,
+  "bound_faces": 289,
+  "bound_nonzero_faces": 289,
+  "nonzero_faces": 10452,
+  "status_counts": {
+    "bound_family_unique": 145,
+    "fallback_unknown": 1,
+    "unbound": 4479
+  },
+  "total_faces": 134754,
+  "total_tags": 4625
+}

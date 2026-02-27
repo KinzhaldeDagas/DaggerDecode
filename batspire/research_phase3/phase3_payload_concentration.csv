@@ -1,0 +1,8 @@
+chunk,total_rows,distinct_payload_lens,top_payload_len,top_payload_count,top_payload_share,top3_payload_share
+AMBI,2452,1,4,2452,1.0,1.0
+BRIT,1499,1,4,1499,1.0,1.0
+FLAD,2272,27,336,1437,0.632482,0.828345
+FLAS,45,42,3472,2,0.044444,0.133333
+LITD,1499,2,80,1497,0.998666,1.0
+LITS,45,23,352,6,0.133333,0.311111
+RAWD,5784,8,4,1683,0.290975,0.612725
