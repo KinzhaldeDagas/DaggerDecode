@@ -1,0 +1,49 @@
+{
+  "bs6_files_scanned": 45,
+  "global_chunk_counts": {
+    "AMBI": 2452,
+    "BRIT": 1499,
+    "FLAD": 2272,
+    "FLAS": 45,
+    "LITD": 1499,
+    "LITS": 45,
+    "RAWD": 5784
+  },
+  "scalar_probe": {
+    "AMBI": {
+      "max": 60000,
+      "min": 0,
+      "samples": 2452
+    },
+    "BRIT": {
+      "max": 1023,
+      "min": 11,
+      "samples": 1499
+    },
+    "FLAD": {
+      "max": 2003659878,
+      "min": -19331,
+      "samples": 213431
+    },
+    "FLAS": {
+      "max": 2003659878,
+      "min": -19331,
+      "samples": 217975
+    },
+    "LITD": {
+      "max": 1498694729,
+      "min": -19443,
+      "samples": 30010
+    },
+    "LITS": {
+      "max": 1498694729,
+      "min": -19443,
+      "samples": 33008
+    },
+    "RAWD": {
+      "max": 1936280870,
+      "min": -17150,
+      "samples": 27056
+    }
+  }
+}
