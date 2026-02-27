@@ -37,23 +37,18 @@ struct DialogueCodeParts {
 };
 
 static bool TryParseDialogueCodeParts(const std::wstring& rawCode, DialogueCodeParts& out) {
+    // Dialogue cells can include punctuation or full clip-like forms.
+    // Accept codes embedded anywhere like: DK92, DKTALK92, DK-WAIT-92.
     std::wstring code = rawCode;
-    auto issp = [](wchar_t c) { return c == L' ' || c == L'\t' || c == L'\r' || c == L'\n'; };
-    while (!code.empty() && issp(code.front())) code.erase(code.begin());
-    while (!code.empty() && issp(code.back())) code.pop_back();
-    if (code.size() < 4) return false;
     for (auto& c : code) c = (wchar_t)towupper(c);
 
-    if (!(code[0] >= L'A' && code[0] <= L'Z' && code[1] >= L'A' && code[1] <= L'Z')) return false;
+    std::wsmatch m;
+    static const std::wregex re(LR"(([A-Z]{2})(?:[^A-Z0-9]*(?:TALK|WAIT))?[^0-9]*(\d{1,3}))");
+    if (!std::regex_search(code, m, re)) return false;
 
-    size_t i = code.size();
-    while (i > 0 && code[i - 1] >= L'0' && code[i - 1] <= L'9') --i;
-    if (i >= code.size()) return false;
-
-    std::wstring tail = code.substr(i);
-    out.speaker = code.substr(0, 2);
-    out.terminalNumber = _wtoi(tail.c_str());
-    return true;
+    out.speaker = m[1].str();
+    out.terminalNumber = _wtoi(m[2].str().c_str());
+    return out.terminalNumber >= 0;
 }
 
 static bool TryParseFlcVariant(const std::wstring& name, std::wstring& speaker, std::wstring& mode, int& variant) {
@@ -2680,7 +2675,7 @@ void MainWindow::CmdSpeakBsaDialogueLine(const FlcSpeakTarget& target) {
 
     DialogueCodeParts parts{};
     if (!TryParseDialogueCodeParts(target.code, parts)) {
-        MessageBoxW(m_hwnd, (L"Could not parse dialogue code: " + target.code).c_str(), L"Speak", MB_OK | MB_ICONWARNING);
+        MessageBoxW(m_hwnd, (L"Speak error: Could not parse dialogue code: " + target.code).c_str(), L"Speak error", MB_OK | MB_ICONWARNING);
         return;
     }
 
