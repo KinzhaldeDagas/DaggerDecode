@@ -39,6 +39,10 @@ static uint32_t ReadU32(const uint8_t* p) {
     return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
 }
 
+static bool IsBsaEntryCompressed(uint16_t compressionFlag) {
+    return (compressionFlag & 0x0001u) != 0u;
+}
+
 static void WriteLe16(std::vector<uint8_t>& out, uint16_t v) {
     out.push_back(static_cast<uint8_t>(v & 0xFF));
     out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
@@ -219,9 +223,10 @@ const BsaEntry* BsaArchive::FindEntryCaseInsensitive(std::string_view name) cons
 }
 
 bool BsaArchive::DecompressLzss(const uint8_t* data, size_t size, std::vector<uint8_t>& outBytes, std::wstring* err) {
-    (void)err;
     outBytes.clear();
     if (!data || size == 0) return true;
+
+    const size_t maxOutBytes = std::min<size_t>(64u * 1024u * 1024u, std::max<size_t>(size * 64u, size + 4096u));
 
     std::array<uint8_t, 4096> window{};
     for (size_t i = 0; i < 4078; ++i) window[i] = static_cast<uint8_t>(' ');
@@ -232,16 +237,20 @@ bool BsaArchive::DecompressLzss(const uint8_t* data, size_t size, std::vector<ui
     while (ip < size) {
         uint8_t flags = data[ip++];
         for (int bit = 0; bit < 8; ++bit) {
-            if (ip >= size) return true;
+            if (ip >= size) break;
 
             bool literal = ((flags >> bit) & 1u) != 0;
             if (literal) {
                 uint8_t b = data[ip++];
                 outBytes.push_back(b);
+                if (outBytes.size() > maxOutBytes) {
+                    if (err) *err = L"LZSS decode exceeded safety output limit.";
+                    return false;
+                }
                 window[pos] = b;
                 pos = (pos + 1) & 0xFFFu;
             } else {
-                if (ip + 1 >= size) return true;
+                if (ip + 1 >= size) { if (err) *err = L"LZSS stream truncated in back-reference token."; return false; }
                 uint8_t b0 = data[ip++];
                 uint8_t b1 = data[ip++];
                 size_t offset = size_t(b0) | (size_t(b1 & 0xF0u) << 4);
@@ -249,6 +258,10 @@ bool BsaArchive::DecompressLzss(const uint8_t* data, size_t size, std::vector<ui
                 for (size_t k = 0; k < length; ++k) {
                     uint8_t b = window[(offset + k) & 0xFFFu];
                     outBytes.push_back(b);
+                    if (outBytes.size() > maxOutBytes) {
+                        if (err) *err = L"LZSS decode exceeded safety output limit.";
+                        return false;
+                    }
                     window[pos] = b;
                     pos = (pos + 1) & 0xFFFu;
                 }
@@ -270,12 +283,22 @@ bool BsaArchive::ReadEntryData(const BsaEntry& entry, std::vector<uint8_t>& outB
     const uint8_t* payload = bytes.data() + entry.offset;
     const size_t payloadSize = entry.packedSize;
 
-    if (entry.compressionFlag == 0) {
+    if (!IsBsaEntryCompressed(entry.compressionFlag)) {
         outBytes.assign(payload, payload + payloadSize);
         return true;
     }
 
-    return DecompressLzss(payload, payloadSize, outBytes, err);
+    std::wstring lzErr;
+    if (DecompressLzss(payload, payloadSize, outBytes, &lzErr)) {
+        return true;
+    }
+
+    // Some archives mark entries with non-zero flags that are not LZSS payloads; fallback to raw bytes.
+    outBytes.assign(payload, payload + payloadSize);
+    if (err) {
+        *err = L"LZSS decode failed, falling back to raw payload: " + lzErr;
+    }
+    return true;
 }
 
 bool FlcFile::NormalizeLeadingPrefix(std::vector<uint8_t>& bytes, bool& strippedPrefix) {
@@ -681,14 +704,18 @@ bool B3dMesh::TryParse(const std::vector<uint8_t>& bytes, B3dMesh& out, std::wst
         }
 
         uint8_t pointPerPlane = bytes[planeCursor + 0];
-        static constexpr uint8_t kMaxPointsPerFace = 32;
-        if (pointPerPlane == 0 || pointPerPlane > kMaxPointsPerFace) {
-            if (err) *err = L"3D plane uses unsupported point count.";
-            return false;
-        }
-
+        static constexpr uint8_t kMaxPointsPerFace = 96;
         size_t pointsBytes = size_t(pointPerPlane) * 8u;
         size_t next = planeCursor + 10 + pointsBytes;
+        if (pointPerPlane == 0 || pointPerPlane > kMaxPointsPerFace) {
+            if (next > bytes.size()) {
+                if (err) *err = L"3D plane list truncated in point section.";
+                return false;
+            }
+            discardedInvalidFaces++;
+            planeCursor = next;
+            continue;
+        }
         if (next > bytes.size()) {
             if (err) *err = L"3D plane list truncated in point section.";
             return false;
@@ -703,17 +730,25 @@ bool B3dMesh::TryParse(const std::vector<uint8_t>& bytes, B3dMesh& out, std::wst
         for (size_t j = 0; j < pointPerPlane; ++j) {
             const uint8_t* pp = bytes.data() + planeCursor + 10 + j * 8u;
             uint32_t pointByteOffset = ReadU32(pp);
-            if ((pointByteOffset % 12u) != 0u) {
+            uint32_t pointId = UINT32_MAX;
+            if ((pointByteOffset % 12u) == 0u) {
+                const uint32_t directId = pointByteOffset / 12u;
+                if (directId < out.points.size()) pointId = directId;
+            }
+            if (pointId == UINT32_MAX && pointByteOffset >= pointListOffset) {
+                const uint32_t rel = pointByteOffset - pointListOffset;
+                if ((rel % 12u) == 0u) {
+                    const uint32_t relId = rel / 12u;
+                    if (relId < out.points.size()) pointId = relId;
+                }
+            }
+            if (pointId == UINT32_MAX) {
                 invalidRef = true;
                 break;
             }
-            uint32_t pointId = pointByteOffset / 12u;
-            if (pointId >= out.points.size()) {
-                invalidRef = true;
-                break;
-            }
-            uint16_t u = static_cast<uint16_t>(pp[4] | (pp[5] << 8));
-            uint16_t v = static_cast<uint16_t>(pp[6] | (pp[7] << 8));
+
+            int16_t u = static_cast<int16_t>(pp[4] | (pp[5] << 8));
+            int16_t v = static_cast<int16_t>(pp[6] | (pp[7] << 8));
             face.pointIndices.push_back(pointId);
             face.uvs.push_back({u, v});
         }
