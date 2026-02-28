@@ -799,6 +799,114 @@ struct LevelPreviewBackBuffer {
     }
 };
 
+struct GpuPreviewVertex {
+    float x{};
+    float y{};
+    float z{};
+    float rhw{};
+    uint32_t color{};
+    float u{};
+    float v{};
+};
+
+static constexpr DWORD kGpuPreviewFvf = D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1;
+
+struct LevelPreviewGpu {
+    IDirect3D9* d3d{};
+    IDirect3DDevice9* dev{};
+    D3DPRESENT_PARAMETERS pp{};
+    std::unordered_map<const BsiPreviewTexture*, IDirect3DTexture9*> textures;
+
+    ~LevelPreviewGpu() { Shutdown(); }
+
+    void Shutdown() {
+        for (auto& kv : textures) {
+            if (kv.second) kv.second->Release();
+        }
+        textures.clear();
+        if (dev) { dev->Release(); dev = nullptr; }
+        if (d3d) { d3d->Release(); d3d = nullptr; }
+        ZeroMemory(&pp, sizeof(pp));
+    }
+
+    bool EnsureDevice(HWND hwnd, int w, int h) {
+        if (!d3d) d3d = Direct3DCreate9(D3D_SDK_VERSION);
+        if (!d3d) return false;
+
+        if (!dev) {
+            ZeroMemory(&pp, sizeof(pp));
+            pp.Windowed = TRUE;
+            pp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+            pp.hDeviceWindow = hwnd;
+            pp.BackBufferWidth = std::max(1, w);
+            pp.BackBufferHeight = std::max(1, h);
+            pp.BackBufferFormat = D3DFMT_X8R8G8B8;
+            pp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+            HRESULT hr = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hwnd,
+                D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED,
+                &pp, &dev);
+            if (FAILED(hr)) {
+                hr = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hwnd,
+                    D3DCREATE_SOFTWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED,
+                    &pp, &dev);
+            }
+            if (FAILED(hr)) {
+                hr = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_REF, hwnd,
+                    D3DCREATE_SOFTWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED,
+                    &pp, &dev);
+            }
+            return SUCCEEDED(hr);
+        }
+
+        if ((UINT)w != pp.BackBufferWidth || (UINT)h != pp.BackBufferHeight) {
+            pp.BackBufferWidth = std::max(1, w);
+            pp.BackBufferHeight = std::max(1, h);
+            HRESULT hr = dev->Reset(&pp);
+            if (FAILED(hr)) {
+                Shutdown();
+                return false;
+            }
+        }
+        return true;
+    }
+
+    IDirect3DTexture9* GetTexture(const BsiPreviewTexture* tex) {
+        if (!dev || !tex || tex->indices.empty() || tex->width <= 0 || tex->height <= 0) return nullptr;
+        auto it = textures.find(tex);
+        if (it != textures.end()) return it->second;
+
+        IDirect3DTexture9* outTex = nullptr;
+        HRESULT hr = dev->CreateTexture((UINT)tex->width, (UINT)tex->height, 1, 0, D3DFMT_X8R8G8B8, D3DPOOL_MANAGED, &outTex, nullptr);
+        if (FAILED(hr) || !outTex) return nullptr;
+
+        D3DLOCKED_RECT lr{};
+        hr = outTex->LockRect(0, &lr, nullptr, 0);
+        if (FAILED(hr)) {
+            outTex->Release();
+            return nullptr;
+        }
+
+        for (int y = 0; y < tex->height; ++y) {
+            uint32_t* row = reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(lr.pBits) + size_t(y) * size_t(lr.Pitch));
+            for (int x = 0; x < tex->width; ++x) {
+                size_t idxPos = size_t(y) * size_t(tex->width) + size_t(x);
+                if (idxPos >= tex->indices.size()) idxPos %= tex->indices.size();
+                uint8_t idx = tex->indices[idxPos];
+                COLORREF c = tex->hasPalette ? tex->palette[idx] : RGB(uint8_t(24 + (idx * 3) / 4), uint8_t(24 + (idx * 3) / 4), uint8_t(24 + (idx * 3) / 4));
+                row[x] = (uint32_t(GetRValue(c)) << 16) | (uint32_t(GetGValue(c)) << 8) | uint32_t(GetBValue(c));
+            }
+        }
+        outTex->UnlockRect(0);
+
+        if (textures.size() > 1024) {
+            for (auto& kv : textures) if (kv.second) kv.second->Release();
+            textures.clear();
+        }
+        textures.insert({ tex, outTex });
+        return outTex;
+    }
+};
+
 struct LevelPreviewState {
     HWND hwnd{};
     std::unique_ptr<LevelPreviewScene> scene;
@@ -814,6 +922,8 @@ struct LevelPreviewState {
     bool bilinearSampling = false;
     bool wireframeMode = false;
     bool renderDirectX = false;
+    bool gpuAcceleration = true;
+    LevelPreviewGpu gpu;
     float drawDistance = 200000.0f;
     LevelPreviewBackBuffer backBuffer;
     ULONGLONG lastTickMs = 0;
@@ -862,6 +972,19 @@ static float ComputeDirectXBasicLight(const PreviewFace& face) {
     const float diffuse = 0.90f;
     return ambient + diffuse * ndotl;
 }
+
+struct LevelPreviewDrawFace {
+    std::vector<POINT> pts;
+    std::vector<float> depths;
+    std::vector<PreviewUv> uvs;
+    std::array<uint8_t, 6> textureTag{};
+    std::string textureStemHint;
+    bool hasUvTexture{ false };
+    float lightScale{ 1.0f };
+    float avgDepth{};
+    size_t sourceIndex{};
+    COLORREF color{};
+};
 
 struct PreviewVertex {
     float x{};
@@ -919,6 +1042,72 @@ static bool IsProjectedTriangleStable(const POINT& p0, const POINT& p1, const PO
     return llabs(area2) >= 4;
 }
 
+
+static bool DrawFacesGpu(LevelPreviewState& s, int w, int h, const std::vector<LevelPreviewDrawFace>& drawFaces) {
+    if (!s.gpuAcceleration || !s.gpu.EnsureDevice(s.hwnd, w, h) || !s.gpu.dev) return false;
+
+    IDirect3DDevice9* dev = s.gpu.dev;
+    HRESULT coop = dev->TestCooperativeLevel();
+    if (coop == D3DERR_DEVICELOST) return false;
+    if (coop == D3DERR_DEVICENOTRESET) {
+        if (FAILED(dev->Reset(&s.gpu.pp))) return false;
+    }
+
+    if (FAILED(dev->BeginScene())) return false;
+    dev->SetRenderState(D3DRS_ZENABLE, FALSE);
+    dev->SetRenderState(D3DRS_LIGHTING, FALSE);
+    dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+    dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+    dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
+    dev->SetSamplerState(0, D3DSAMP_MINFILTER, s.bilinearSampling ? D3DTEXF_LINEAR : D3DTEXF_POINT);
+    dev->SetSamplerState(0, D3DSAMP_MAGFILTER, s.bilinearSampling ? D3DTEXF_LINEAR : D3DTEXF_POINT);
+    dev->SetFVF(kGpuPreviewFvf);
+    dev->Clear(0, nullptr, D3DCLEAR_TARGET, D3DCOLOR_XRGB(16, 16, 16), 1.0f, 0);
+
+    const float zScale = 1.0f / std::max(1.0f, std::clamp(s.drawDistance, kLevelPreviewDrawDistanceMin, kLevelPreviewFarZ));
+
+    auto normalizeUv = [](float uv, int texDim) -> float {
+        if (!std::isfinite(uv) || texDim <= 0) return 0.0f;
+        const float dim = (float)texDim;
+        const float absUv = fabsf(uv);
+        if (absUv > dim * 64.0f) uv /= 256.0f;
+        else if (absUv > dim * 4.0f) uv /= 16.0f;
+        return uv;
+    };
+
+    for (const auto& df : drawFaces) {
+        if (df.pts.size() < 3 || df.depths.size() != df.pts.size()) continue;
+        const auto* srcTex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForFace(df.textureTag, df.textureStemHint) : nullptr;
+        IDirect3DTexture9* gpuTex = srcTex ? s.gpu.GetTexture(srcTex) : nullptr;
+        dev->SetTexture(0, gpuTex);
+
+        for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
+            GpuPreviewVertex tri[3]{};
+            const size_t idx[3] = { 0, ti, ti + 1 };
+            for (int vi = 0; vi < 3; ++vi) {
+                const size_t i = idx[vi];
+                tri[vi].x = (float)df.pts[i].x + 0.5f;
+                tri[vi].y = (float)df.pts[i].y + 0.5f;
+                tri[vi].z = std::clamp(df.depths[i] * zScale, 0.0f, 1.0f);
+                tri[vi].rhw = 1.0f;
+                COLORREF c = s.renderDirectX ? ModulateColor(df.color, df.lightScale) : df.color;
+                tri[vi].color = D3DCOLOR_XRGB(GetRValue(c), GetGValue(c), GetBValue(c));
+                if (gpuTex && srcTex) {
+                    const float u = normalizeUv(df.uvs[i].u, srcTex->width) / (float)std::max(1, srcTex->width);
+                    const float v = normalizeUv(df.uvs[i].v, srcTex->height) / (float)std::max(1, srcTex->height);
+                    tri[vi].u = u;
+                    tri[vi].v = v;
+                }
+            }
+            dev->DrawPrimitiveUP(D3DPT_TRIANGLELIST, 1, tri, sizeof(GpuPreviewVertex));
+        }
+    }
+
+    dev->EndScene();
+    dev->Present(nullptr, nullptr, nullptr, nullptr);
+    return true;
+}
 
 static void DrawTextBottomRight(HDC hdc, RECT rc, const std::wstring& text, COLORREF color) {
     SetBkMode(hdc, TRANSPARENT);
@@ -1023,19 +1212,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         LineTo(hdc, pb.x, pb.y);
     };
 
-    struct DrawFace {
-        std::vector<POINT> pts;
-        std::vector<float> depths;
-        std::vector<PreviewUv> uvs;
-        std::array<uint8_t, 6> textureTag{};
-        std::string textureStemHint;
-        bool hasUvTexture{ false };
-        float lightScale{ 1.0f };
-        float avgDepth{};
-        size_t sourceIndex{};
-        COLORREF color{};
-    };
-    std::vector<DrawFace> drawFaces;
+    std::vector<LevelPreviewDrawFace> drawFaces;
     drawFaces.reserve(s.scene->modelFaces.size());
 
 
@@ -1043,7 +1220,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         const auto& face = s.scene->modelFaces[faceIndex];
         if (face.worldPoints.size() < 3) continue;
 
-        DrawFace df{};
+        LevelPreviewDrawFace df{};
         df.sourceIndex = faceIndex;
         df.color = face.color;
         df.textureTag = face.textureTag;
@@ -1120,13 +1297,14 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         drawFaces.push_back(std::move(df));
     }
 
-    std::stable_sort(drawFaces.begin(), drawFaces.end(), [](const DrawFace& a, const DrawFace& b) {
+    std::stable_sort(drawFaces.begin(), drawFaces.end(), [](const LevelPreviewDrawFace& a, const LevelPreviewDrawFace& b) {
         const float dz = a.avgDepth - b.avgDepth;
         if (fabsf(dz) > 0.01f) return dz < 0.0f;
         return a.sourceIndex < b.sourceIndex;
     });
 
-    for (const auto& df : drawFaces) {
+    const bool gpuFacesRendered = (s.renderDirectX && s.gpuAcceleration && DrawFacesGpu(s, w, h, drawFaces));
+    if (!gpuFacesRendered) for (const auto& df : drawFaces) {
         const auto* tex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForFace(df.textureTag, df.textureStemHint) : nullptr;
         if (tex && df.pts.size() >= 3) {
             for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
@@ -1272,14 +1450,16 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         }
     }
 
-    BITMAPINFO bmi{};
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = w;
-    bmi.bmiHeader.biHeight = -h;
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32;
-    bmi.bmiHeader.biCompression = BI_RGB;
-    SetDIBitsToDevice(hdc, 0, 0, (DWORD)w, (DWORD)h, 0, 0, 0, (UINT)h, colorBuffer.data(), &bmi, DIB_RGB_COLORS);
+    if (!gpuFacesRendered) {
+        BITMAPINFO bmi{};
+        bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bmi.bmiHeader.biWidth = w;
+        bmi.bmiHeader.biHeight = -h;
+        bmi.bmiHeader.biPlanes = 1;
+        bmi.bmiHeader.biBitCount = 32;
+        bmi.bmiHeader.biCompression = BI_RGB;
+        SetDIBitsToDevice(hdc, 0, 0, (DWORD)w, (DWORD)h, 0, 0, 0, (UINT)h, colorBuffer.data(), &bmi, DIB_RGB_COLORS);
+    }
 
     SelectObject(hdc, penBox);
     for (const auto& box : s.scene->boxes) {
@@ -1321,7 +1501,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         L"  FLAD/FLAS " + std::to_wstring(s.scene->fladCount) + L"/" + std::to_wstring(s.scene->flasCount) +
         L"  RAWD " + std::to_wstring(s.scene->rawdCount) +
         L"  Draw " + std::to_wstring((int)std::clamp(s.drawDistance, kLevelPreviewDrawDistanceMin, kLevelPreviewFarZ)) + fpsBuf +
-        L"  (WASD move, Shift 6x, Q/E vertical, click+drag rotate, B: Bilinear, F: Wireframe, R: DirectX " + std::wstring(s.renderDirectX ? L"ON" : L"OFF") + L", I/K: Draw +/-)";
+        L"  (WASD move, Shift 6x, Q/E vertical, click+drag rotate, B: Bilinear, F: Wireframe, R: DirectX " + std::wstring(s.renderDirectX ? L"ON" : L"OFF") + L", G: GPU " + std::wstring(s.gpuAcceleration ? L"ON" : L"OFF") + L", I/K: Draw +/-)";
     DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
 }
 
@@ -1368,6 +1548,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         if (s && (wParam == 'B' || wParam == 'b')) { s->bilinearSampling = !s->bilinearSampling; InvalidateRect(hwnd, nullptr, FALSE); }
         if (s && (wParam == 'F' || wParam == 'f')) { s->wireframeMode = !s->wireframeMode; InvalidateRect(hwnd, nullptr, FALSE); }
         if (s && (wParam == 'R' || wParam == 'r')) { s->renderDirectX = !s->renderDirectX; InvalidateRect(hwnd, nullptr, FALSE); }
+        if (s && (wParam == 'G' || wParam == 'g')) { s->gpuAcceleration = !s->gpuAcceleration; InvalidateRect(hwnd, nullptr, FALSE); }
         if (s && (wParam == 'I' || wParam == 'i')) {
             s->drawDistance = std::min(kLevelPreviewFarZ, s->drawDistance + kLevelPreviewDrawDistanceStep);
             InvalidateRect(hwnd, nullptr, FALSE);
@@ -2669,16 +2850,19 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
                     pf.color = colorFromTextureTag(face.textureTag, modelStem);
                     pf.textureTag = face.textureTag;
                     pf.textureStemHint = textureStemHint;
-                    pf.hasUvTexture = (face.uvs.size() == face.pointIndices.size() && !face.uvs.empty());
-                    if (pf.hasUvTexture) {
-                        pf.uvs.reserve(face.uvs.size());
-                        for (const auto& uv : face.uvs) pf.uvs.push_back({ (float)uv.u, (float)uv.v });
-                    }
+                    const bool faceHasUvTexture = (face.uvs.size() == face.pointIndices.size() && !face.uvs.empty());
+                    if (faceHasUvTexture) pf.uvs.reserve(face.uvs.size());
                     pf.worldPoints.reserve(face.pointIndices.size());
-                    for (uint32_t pi : face.pointIndices) {
+                    for (size_t pointSlot = 0; pointSlot < face.pointIndices.size(); ++pointSlot) {
+                        const uint32_t pi = face.pointIndices[pointSlot];
                         if (pi >= transformedPoints.size() || !transformedValid[pi]) continue;
                         pf.worldPoints.push_back(transformedPoints[pi]);
+                        if (faceHasUvTexture) {
+                            const auto& uv = face.uvs[pointSlot];
+                            pf.uvs.push_back({ (float)uv.u, (float)uv.v });
+                        }
                     }
+                    pf.hasUvTexture = (faceHasUvTexture && pf.uvs.size() == pf.worldPoints.size() && !pf.uvs.empty());
                     if (pf.worldPoints.size() >= 3) {
                         payload->modelFaces.push_back(std::move(pf));
                         if (payload->modelFaces.size() >= kMaxPreviewFaces) break;
