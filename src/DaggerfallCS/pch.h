@@ -7,6 +7,7 @@
 #include <commctrl.h>
 #include <shlwapi.h>
 #include <shellapi.h>
+#include <d3d9.h>
 #include <string>
 #include <string_view>
 #include <vector>
