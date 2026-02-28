@@ -107,8 +107,8 @@ struct Bs6Scene {
 };
 
 struct B3dFaceUv {
-    uint16_t u{};
-    uint16_t v{};
+    int16_t u{};
+    int16_t v{};
 };
 
 struct B3dFace {

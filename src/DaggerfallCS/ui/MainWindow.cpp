@@ -555,6 +555,11 @@ static BsiPreviewTexture LoadTextureByStemSync(const std::string& stem) {
     return tex;
 }
 
+static uint64_t& TextureCacheEpoch() {
+    static uint64_t epoch = 1;
+    return epoch;
+}
+
 static void PumpTextureStreaming(size_t budget) {
     auto& queue = TextureStreamQueue();
     auto& queued = TextureStreamQueuedSet();
@@ -565,7 +570,7 @@ static void PumpTextureStreaming(size_t budget) {
         queued.erase(stem);
         if (cache.find(stem) != cache.end()) continue;
         BsiPreviewTexture tex = LoadTextureByStemSync(stem);
-        if (cache.size() >= kMaxTextureCacheEntries) cache.clear();
+        if (cache.size() >= kMaxTextureCacheEntries) { cache.clear(); TextureCacheEpoch()++; }
         cache.insert({ stem, std::move(tex) });
     }
 }
@@ -819,11 +824,15 @@ struct LevelPreviewGpu {
 
     ~LevelPreviewGpu() { Shutdown(); }
 
-    void Shutdown() {
+    void ClearTextureCache() {
         for (auto& kv : textures) {
             if (kv.second) kv.second->Release();
         }
         textures.clear();
+    }
+
+    void Shutdown() {
+        ClearTextureCache();
         if (dev) { dev->Release(); dev = nullptr; }
         if (d3d) { d3d->Release(); d3d = nullptr; }
         ZeroMemory(&pp, sizeof(pp));
@@ -841,6 +850,8 @@ struct LevelPreviewGpu {
             pp.BackBufferWidth = std::max(1, w);
             pp.BackBufferHeight = std::max(1, h);
             pp.BackBufferFormat = D3DFMT_X8R8G8B8;
+            pp.EnableAutoDepthStencil = TRUE;
+            pp.AutoDepthStencilFormat = D3DFMT_D24X8;
             pp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
             HRESULT hr = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hwnd,
                 D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED,
@@ -859,13 +870,19 @@ struct LevelPreviewGpu {
         }
 
         if ((UINT)w != pp.BackBufferWidth || (UINT)h != pp.BackBufferHeight) {
-            pp.BackBufferWidth = std::max(1, w);
-            pp.BackBufferHeight = std::max(1, h);
-            HRESULT hr = dev->Reset(&pp);
-            if (FAILED(hr)) {
-                Shutdown();
-                return false;
-            }
+            if (!ResetDevice(w, h)) return false;
+        }
+        return true;
+    }
+
+    bool ResetDevice(int w, int h) {
+        if (!dev) return false;
+        pp.BackBufferWidth = std::max(1, w);
+        pp.BackBufferHeight = std::max(1, h);
+        HRESULT hr = dev->Reset(&pp);
+        if (FAILED(hr)) {
+            Shutdown();
+            return false;
         }
         return true;
     }
@@ -922,8 +939,9 @@ struct LevelPreviewState {
     bool bilinearSampling = false;
     bool wireframeMode = false;
     bool renderDirectX = false;
-    bool gpuAcceleration = true;
+    bool gpuAcceleration = false;
     LevelPreviewGpu gpu;
+    uint64_t gpuTextureEpoch = 0;
     float drawDistance = 200000.0f;
     LevelPreviewBackBuffer backBuffer;
     ULONGLONG lastTickMs = 0;
@@ -1046,15 +1064,24 @@ static bool IsProjectedTriangleStable(const POINT& p0, const POINT& p1, const PO
 static bool DrawFacesGpu(LevelPreviewState& s, int w, int h, const std::vector<LevelPreviewDrawFace>& drawFaces) {
     if (!s.gpuAcceleration || !s.gpu.EnsureDevice(s.hwnd, w, h) || !s.gpu.dev) return false;
 
+    const uint64_t textureEpoch = TextureCacheEpoch();
+    if (s.gpuTextureEpoch != textureEpoch) {
+        s.gpu.ClearTextureCache();
+        s.gpuTextureEpoch = textureEpoch;
+    }
+
     IDirect3DDevice9* dev = s.gpu.dev;
     HRESULT coop = dev->TestCooperativeLevel();
     if (coop == D3DERR_DEVICELOST) return false;
     if (coop == D3DERR_DEVICENOTRESET) {
-        if (FAILED(dev->Reset(&s.gpu.pp))) return false;
+        if (!s.gpu.ResetDevice(w, h)) return false;
+        dev = s.gpu.dev;
     }
 
     if (FAILED(dev->BeginScene())) return false;
-    dev->SetRenderState(D3DRS_ZENABLE, FALSE);
+    dev->SetRenderState(D3DRS_ZENABLE, TRUE);
+    dev->SetRenderState(D3DRS_ZWRITEENABLE, TRUE);
+    dev->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
     dev->SetRenderState(D3DRS_LIGHTING, FALSE);
     dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
     dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
@@ -1063,7 +1090,11 @@ static bool DrawFacesGpu(LevelPreviewState& s, int w, int h, const std::vector<L
     dev->SetSamplerState(0, D3DSAMP_MINFILTER, s.bilinearSampling ? D3DTEXF_LINEAR : D3DTEXF_POINT);
     dev->SetSamplerState(0, D3DSAMP_MAGFILTER, s.bilinearSampling ? D3DTEXF_LINEAR : D3DTEXF_POINT);
     dev->SetFVF(kGpuPreviewFvf);
-    dev->Clear(0, nullptr, D3DCLEAR_TARGET, D3DCOLOR_XRGB(16, 16, 16), 1.0f, 0);
+    dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
+    dev->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+    dev->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    dev->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+    dev->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, D3DCOLOR_XRGB(16, 16, 16), 1.0f, 0);
 
     const float zScale = 1.0f / std::max(1.0f, std::clamp(s.drawDistance, kLevelPreviewDrawDistanceMin, kLevelPreviewFarZ));
 
@@ -1081,6 +1112,12 @@ static bool DrawFacesGpu(LevelPreviewState& s, int w, int h, const std::vector<L
         const auto* srcTex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForFace(df.textureTag, df.textureStemHint) : nullptr;
         IDirect3DTexture9* gpuTex = srcTex ? s.gpu.GetTexture(srcTex) : nullptr;
         dev->SetTexture(0, gpuTex);
+        if (gpuTex) {
+            dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
+        }
+        else {
+            dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);
+        }
 
         for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
             GpuPreviewVertex tri[3]{};
@@ -1105,8 +1142,8 @@ static bool DrawFacesGpu(LevelPreviewState& s, int w, int h, const std::vector<L
     }
 
     dev->EndScene();
-    dev->Present(nullptr, nullptr, nullptr, nullptr);
-    return true;
+    const HRESULT presentHr = dev->Present(nullptr, nullptr, nullptr, nullptr);
+    return SUCCEEDED(presentHr);
 }
 
 static void DrawTextBottomRight(HDC hdc, RECT rc, const std::wstring& text, COLORREF color) {
@@ -1539,6 +1576,8 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
                 s->scene = std::move(scene);
                 s->directXPixelStep = 1;
                 s->pixelStepTuneMs = 0;
+                s->gpu.ClearTextureCache();
+                s->gpuTextureEpoch = TextureCacheEpoch();
             }
             InvalidateRect(hwnd, nullptr, FALSE);
         }
@@ -2802,7 +2841,24 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
 
                     std::vector<uint8_t> bytes;
                     std::wstring err;
-                    if (!modelsArchive->ReadEntryData(*entry, bytes, &err) || bytes.size() > kMaxMeshBytes) {
+                    const bool readOk = modelsArchive->ReadEntryData(*entry, bytes, &err);
+                    if ((!readOk || bytes.empty() || bytes.size() > kMaxMeshBytes) && entry) {
+                        std::filesystem::path extractedModel = std::filesystem::path("batspire") / "3D_extracted" / winutil::WidenUtf8(entry->name);
+                        if (std::filesystem::exists(extractedModel)) {
+                            std::ifstream f(extractedModel, std::ios::binary);
+                            if (f) {
+                                f.seekg(0, std::ios::end);
+                                const size_t n = size_t(f.tellg());
+                                f.seekg(0, std::ios::beg);
+                                if (n > 0 && n <= kMaxMeshBytes) {
+                                    bytes.resize(n);
+                                    f.read(reinterpret_cast<char*>(bytes.data()), (std::streamsize)n);
+                                    if (!(f.good() || f.eof())) bytes.clear();
+                                }
+                            }
+                        }
+                    }
+                    if (bytes.empty() || bytes.size() > kMaxMeshBytes) {
                         failedMeshKeys.insert(modelKey);
                         missingNames.insert(modelKey);
                         invalidMeshInstances++;
