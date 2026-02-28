@@ -2866,7 +2866,24 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
                     }
 
                     battlespire::B3dFileSummary summary;
-                    if (!battlespire::B3dFileSummary::TryParse(bytes, summary, &err) || summary.pointCount > kMaxMeshPoints || summary.planeCount > kMaxMeshPlanes) {
+                    auto summaryInRange = [&](const std::vector<uint8_t>& src) -> bool {
+                        if (!battlespire::B3dFileSummary::TryParse(src, summary, &err)) return false;
+                        return summary.pointCount <= kMaxMeshPoints && summary.planeCount <= kMaxMeshPlanes;
+                    };
+
+                    if (!summaryInRange(bytes)) {
+                        // Recovery path: try forced LZSS decode for entries whose compression flag semantics are unknown.
+                        if (entry->compressionFlag != 0 && entry->offset <= modelsArchive->bytes.size() && entry->packedSize <= modelsArchive->bytes.size() - entry->offset) {
+                            const uint8_t* payloadPtr = modelsArchive->bytes.data() + entry->offset;
+                            std::vector<uint8_t> recovered;
+                            std::wstring recoverErr;
+                            if (battlespire::BsaArchive::DecompressLzss(payloadPtr, entry->packedSize, recovered, &recoverErr) && !recovered.empty() && recovered.size() <= kMaxMeshBytes) {
+                                if (summaryInRange(recovered)) bytes.swap(recovered);
+                            }
+                        }
+                    }
+
+                    if (!summaryInRange(bytes)) {
                         failedMeshKeys.insert(modelKey);
                         missingNames.insert(modelKey);
                         invalidMeshInstances++;
@@ -2875,6 +2892,18 @@ void MainWindow::SendLevelToPreview(const battlespire::Bs6Scene* scene, const st
 
                     battlespire::B3dMesh mesh;
                     if (!battlespire::B3dMesh::TryParse(bytes, mesh, &err)) {
+                        if (entry->compressionFlag != 0 && entry->offset <= modelsArchive->bytes.size() && entry->packedSize <= modelsArchive->bytes.size() - entry->offset) {
+                            const uint8_t* payloadPtr = modelsArchive->bytes.data() + entry->offset;
+                            std::vector<uint8_t> recovered;
+                            std::wstring recoverErr;
+                            if (battlespire::BsaArchive::DecompressLzss(payloadPtr, entry->packedSize, recovered, &recoverErr) && !recovered.empty() && recovered.size() <= kMaxMeshBytes) {
+                                if (battlespire::B3dMesh::TryParse(recovered, mesh, &err)) {
+                                    bytes.swap(recovered);
+                                }
+                            }
+                        }
+                    }
+                    if (mesh.points.empty() || mesh.faces.empty()) {
                         failedMeshKeys.insert(modelKey);
                         missingNames.insert(modelKey);
                         invalidMeshInstances++;
