@@ -996,6 +996,7 @@ struct LevelPreviewDrawFace {
     std::vector<POINT> pts;
     std::vector<float> depths;
     std::vector<PreviewUv> uvs;
+    std::vector<std::array<size_t, 3>> tris;
     std::array<uint8_t, 6> textureTag{};
     std::string textureStemHint;
     bool hasUvTexture{ false };
@@ -1089,6 +1090,27 @@ static bool PointInTriangle2D(const POINT& p, const POINT& a, const POINT& b, co
     return c0 <= 0 && c1 <= 0 && c2 <= 0;
 }
 
+static bool IsProjectedPolygonConvex(const std::vector<POINT>& pts, bool ccw) {
+    if (pts.size() < 3) return false;
+    int sign = 0;
+    for (size_t i = 0; i < pts.size(); ++i) {
+        const POINT& a = pts[i];
+        const POINT& b = pts[(i + 1) % pts.size()];
+        const POINT& c = pts[(i + 2) % pts.size()];
+        const int64_t ax = int64_t(b.x) - int64_t(a.x);
+        const int64_t ay = int64_t(b.y) - int64_t(a.y);
+        const int64_t bx = int64_t(c.x) - int64_t(b.x);
+        const int64_t by = int64_t(c.y) - int64_t(b.y);
+        const int64_t cross = ax * by - ay * bx;
+        if (llabs(cross) < 4) continue;
+        const int thisSign = (cross > 0) ? 1 : -1;
+        if (sign == 0) sign = thisSign;
+        else if (thisSign != sign) return false;
+    }
+    if (sign == 0) return false;
+    return ccw ? (sign > 0) : (sign < 0);
+}
+
 static std::vector<std::array<size_t, 3>> TriangulatePolygonIndices(const std::vector<POINT>& pts) {
     std::vector<std::array<size_t, 3>> out;
     if (pts.size() < 3) return out;
@@ -1102,6 +1124,11 @@ static std::vector<std::array<size_t, 3>> TriangulatePolygonIndices(const std::v
     for (size_t i = 0; i < pts.size(); ++i) idx.push_back(i);
 
     const bool ccw = SignedArea2D(pts) > 0.0f;
+    if (IsProjectedPolygonConvex(pts, ccw)) {
+        for (size_t ti = 1; ti + 1 < pts.size(); ++ti) out.push_back({ 0u, ti, ti + 1 });
+        return out;
+    }
+
     size_t guard = 0;
     const size_t guardMax = pts.size() * pts.size();
     while (idx.size() > 3 && guard < guardMax) {
@@ -1211,8 +1238,8 @@ static bool DrawFacesGpu(LevelPreviewState& s, int w, int h, const std::vector<L
             dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);
         }
 
-        const auto tris = TriangulatePolygonIndices(df.pts);
-        for (const auto& triIdx : tris) {
+        if (df.tris.empty()) continue;
+        for (const auto& triIdx : df.tris) {
             GpuPreviewVertex tri[3]{};
             const size_t idx[3] = { triIdx[0], triIdx[1], triIdx[2] };
             for (int vi = 0; vi < 3; ++vi) {
@@ -1428,6 +1455,8 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
             std::reverse(df.depths.begin(), df.depths.end());
             if (!df.uvs.empty()) std::reverse(df.uvs.begin(), df.uvs.end());
         }
+        df.tris = TriangulatePolygonIndices(df.pts);
+        if (df.tris.empty()) continue;
         df.avgDepth = depthSum / (float)df.pts.size();
         drawFaces.push_back(std::move(df));
     }
@@ -1442,8 +1471,8 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     if (!gpuFacesRendered) for (const auto& df : drawFaces) {
         const auto* tex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForFace(df.textureTag, df.textureStemHint) : nullptr;
         if (tex && df.pts.size() >= 3) {
-            const auto tris = TriangulatePolygonIndices(df.pts);
-            for (const auto& triIdx : tris) {
+            if (df.tris.empty()) continue;
+            for (const auto& triIdx : df.tris) {
                 const POINT p0 = df.pts[triIdx[0]], p1 = df.pts[triIdx[1]], p2 = df.pts[triIdx[2]];
                 if (!IsProjectedTriangleStable(p0, p1, p2)) continue;
                 const int64_t area2 = (int64_t(p1.x) - int64_t(p0.x)) * (int64_t(p2.y) - int64_t(p0.y)) - (int64_t(p1.y) - int64_t(p0.y)) * (int64_t(p2.x) - int64_t(p0.x));
@@ -1531,8 +1560,8 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
             }
         }
         else if (df.pts.size() >= 3 && df.depths.size() == df.pts.size()) {
-            const auto tris = TriangulatePolygonIndices(df.pts);
-            for (const auto& triIdx : tris) {
+            if (df.tris.empty()) continue;
+            for (const auto& triIdx : df.tris) {
                 const POINT p0 = df.pts[triIdx[0]], p1 = df.pts[triIdx[1]], p2 = df.pts[triIdx[2]];
                 if (!IsProjectedTriangleStable(p0, p1, p2)) continue;
                 const int64_t area2 = (int64_t(p1.x) - int64_t(p0.x)) * (int64_t(p2.y) - int64_t(p0.y)) - (int64_t(p1.y) - int64_t(p0.y)) * (int64_t(p2.x) - int64_t(p0.x));
