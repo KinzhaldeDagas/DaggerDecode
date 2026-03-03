@@ -1000,6 +1000,7 @@ struct LevelPreviewDrawFace {
     std::vector<std::array<size_t, 3>> tris;
     std::array<uint8_t, 6> textureTag{};
     std::string textureStemHint;
+    const BsiPreviewTexture* resolvedTexture{ nullptr };
     bool hasUvTexture{ false };
     float lightScale{ 1.0f };
     float avgDepth{};
@@ -1110,6 +1111,12 @@ static bool IsProjectedPolygonConvex(const std::vector<POINT>& pts, bool ccw) {
     }
     if (sign == 0) return false;
     return ccw ? (sign > 0) : (sign < 0);
+}
+
+static bool IsScreenTriangleBackface(const POINT& p0, const POINT& p1, const POINT& p2) {
+    const int64_t area2 = (int64_t(p1.x) - int64_t(p0.x)) * (int64_t(p2.y) - int64_t(p0.y))
+        - (int64_t(p1.y) - int64_t(p0.y)) * (int64_t(p2.x) - int64_t(p0.x));
+    return area2 >= 0;
 }
 
 static std::vector<std::array<size_t, 3>> TriangulatePolygonIndices(const std::vector<POINT>& pts) {
@@ -1229,7 +1236,7 @@ static bool DrawFacesGpu(LevelPreviewState& s, int w, int h, const std::vector<L
 
     for (const auto& df : drawFaces) {
         if (df.pts.size() < 3 || df.depths.size() != df.pts.size()) continue;
-        const auto* srcTex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForFace(df.textureTag, df.textureStemHint) : nullptr;
+        const auto* srcTex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? df.resolvedTexture : nullptr;
         IDirect3DTexture9* gpuTex = srcTex ? s.gpu.GetTexture(srcTex) : nullptr;
         dev->SetTexture(0, gpuTex);
         if (gpuTex) {
@@ -1244,8 +1251,7 @@ static bool DrawFacesGpu(LevelPreviewState& s, int w, int h, const std::vector<L
             GpuPreviewVertex tri[3]{};
             const size_t idx[3] = { triIdx[0], triIdx[1], triIdx[2] };
             const POINT p0 = df.pts[idx[0]], p1 = df.pts[idx[1]], p2 = df.pts[idx[2]];
-            const int64_t area2 = (int64_t(p1.x) - int64_t(p0.x)) * (int64_t(p2.y) - int64_t(p0.y)) - (int64_t(p1.y) - int64_t(p0.y)) * (int64_t(p2.x) - int64_t(p0.x));
-            if (s.cullBackfaces && area2 >= 0) continue;
+            if (s.cullBackfaces && IsScreenTriangleBackface(p0, p1, p2)) continue;
             for (int vi = 0; vi < 3; ++vi) {
                 const size_t i = idx[vi];
                 tri[vi].x = (float)df.pts[i].x + 0.5f;
@@ -1388,7 +1394,6 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         df.textureTag = face.textureTag;
         df.textureStemHint = face.textureStemHint;
         df.hasUvTexture = face.hasUvTexture;
-        if (s.texturedOnlyMode && !df.hasUvTexture) continue;
         df.lightScale = s.renderDirectX ? ComputeDirectXBasicLight(face) : 1.0f;
         std::vector<PreviewVertex> poly;
         poly.reserve(face.worldPoints.size());
@@ -1456,6 +1461,9 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
             df.hasUvTexture = false;
             df.uvs.clear();
         }
+        if (df.hasUvTexture && !df.uvs.empty()) {
+            df.resolvedTexture = TryGetTextureForFace(df.textureTag, df.textureStemHint);
+        }
         if (SignedArea2D(df.pts) > 0.0f) {
             std::reverse(df.pts.begin(), df.pts.end());
             std::reverse(df.depths.begin(), df.depths.end());
@@ -1463,8 +1471,9 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         }
         df.tris = TriangulatePolygonIndices(df.pts);
         if (df.tris.empty()) continue;
+        if (s.texturedOnlyMode && !df.resolvedTexture) continue;
         df.avgDepth = depthSum / (float)df.pts.size();
-        if (df.hasUvTexture) texturedDrawFaces++;
+        if (df.resolvedTexture) texturedDrawFaces++;
         drawFaces.push_back(std::move(df));
     }
 
@@ -1476,14 +1485,13 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
 
     const bool gpuFacesRendered = (s.renderDirectX && s.gpuAcceleration && DrawFacesGpu(s, w, h, drawFaces));
     if (!gpuFacesRendered) for (const auto& df : drawFaces) {
-        const auto* tex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForFace(df.textureTag, df.textureStemHint) : nullptr;
+        const auto* tex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? df.resolvedTexture : nullptr;
         if (tex && df.pts.size() >= 3) {
             if (df.tris.empty()) continue;
             for (const auto& triIdx : df.tris) {
                 const POINT p0 = df.pts[triIdx[0]], p1 = df.pts[triIdx[1]], p2 = df.pts[triIdx[2]];
                 if (!IsProjectedTriangleStable(p0, p1, p2)) continue;
-                const int64_t area2 = (int64_t(p1.x) - int64_t(p0.x)) * (int64_t(p2.y) - int64_t(p0.y)) - (int64_t(p1.y) - int64_t(p0.y)) * (int64_t(p2.x) - int64_t(p0.x));
-                if (s.cullBackfaces && area2 >= 0) continue;
+                if (s.cullBackfaces && IsScreenTriangleBackface(p0, p1, p2)) continue;
                 const PreviewUv t0 = df.uvs[triIdx[0]], t1 = df.uvs[triIdx[1]], t2 = df.uvs[triIdx[2]];
                 const float z0 = df.depths[triIdx[0]], z1 = df.depths[triIdx[1]], z2 = df.depths[triIdx[2]];
 
@@ -1571,8 +1579,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
             for (const auto& triIdx : df.tris) {
                 const POINT p0 = df.pts[triIdx[0]], p1 = df.pts[triIdx[1]], p2 = df.pts[triIdx[2]];
                 if (!IsProjectedTriangleStable(p0, p1, p2)) continue;
-                const int64_t area2 = (int64_t(p1.x) - int64_t(p0.x)) * (int64_t(p2.y) - int64_t(p0.y)) - (int64_t(p1.y) - int64_t(p0.y)) * (int64_t(p2.x) - int64_t(p0.x));
-                if (s.cullBackfaces && area2 >= 0) continue;
+                if (s.cullBackfaces && IsScreenTriangleBackface(p0, p1, p2)) continue;
                 const float z0 = df.depths[triIdx[0]], z1 = df.depths[triIdx[1]], z2 = df.depths[triIdx[2]];
 
                 LONG triMinX = std::min(std::min(p0.x, p1.x), p2.x);
