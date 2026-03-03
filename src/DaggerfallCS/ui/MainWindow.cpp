@@ -941,6 +941,7 @@ struct LevelPreviewState {
     bool renderDirectX = false;
     bool gpuAcceleration = false;
     bool cullBackfaces = true;
+    bool texturedOnlyMode = false;
     LevelPreviewGpu gpu;
     uint64_t gpuTextureEpoch = 0;
     float drawDistance = 60000.0f;
@@ -1202,7 +1203,7 @@ static bool DrawFacesGpu(LevelPreviewState& s, int w, int h, const std::vector<L
     dev->SetRenderState(D3DRS_ZWRITEENABLE, TRUE);
     dev->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
     dev->SetRenderState(D3DRS_LIGHTING, FALSE);
-    dev->SetRenderState(D3DRS_CULLMODE, s.cullBackfaces ? D3DCULL_CCW : D3DCULL_NONE);
+    dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
     dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
     dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
     dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
@@ -1242,6 +1243,9 @@ static bool DrawFacesGpu(LevelPreviewState& s, int w, int h, const std::vector<L
         for (const auto& triIdx : df.tris) {
             GpuPreviewVertex tri[3]{};
             const size_t idx[3] = { triIdx[0], triIdx[1], triIdx[2] };
+            const POINT p0 = df.pts[idx[0]], p1 = df.pts[idx[1]], p2 = df.pts[idx[2]];
+            const int64_t area2 = (int64_t(p1.x) - int64_t(p0.x)) * (int64_t(p2.y) - int64_t(p0.y)) - (int64_t(p1.y) - int64_t(p0.y)) * (int64_t(p2.x) - int64_t(p0.x));
+            if (s.cullBackfaces && area2 >= 0) continue;
             for (int vi = 0; vi < 3; ++vi) {
                 const size_t i = idx[vi];
                 tri[vi].x = (float)df.pts[i].x + 0.5f;
@@ -1371,6 +1375,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
 
     std::vector<LevelPreviewDrawFace> drawFaces;
     drawFaces.reserve(s.scene->modelFaces.size());
+    size_t texturedDrawFaces = 0;
 
 
     for (size_t faceIndex = 0; faceIndex < s.scene->modelFaces.size(); ++faceIndex) {
@@ -1383,6 +1388,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         df.textureTag = face.textureTag;
         df.textureStemHint = face.textureStemHint;
         df.hasUvTexture = face.hasUvTexture;
+        if (s.texturedOnlyMode && !df.hasUvTexture) continue;
         df.lightScale = s.renderDirectX ? ComputeDirectXBasicLight(face) : 1.0f;
         std::vector<PreviewVertex> poly;
         poly.reserve(face.worldPoints.size());
@@ -1458,6 +1464,7 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         df.tris = TriangulatePolygonIndices(df.pts);
         if (df.tris.empty()) continue;
         df.avgDepth = depthSum / (float)df.pts.size();
+        if (df.hasUvTexture) texturedDrawFaces++;
         drawFaces.push_back(std::move(df));
     }
 
@@ -1670,9 +1677,10 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         L"  LITD/LITS " + std::to_wstring(s.scene->litdCount) + L"/" + std::to_wstring(s.scene->litsCount) +
         L"  FLAD/FLAS " + std::to_wstring(s.scene->fladCount) + L"/" + std::to_wstring(s.scene->flasCount) +
         L"  RAWD " + std::to_wstring(s.scene->rawdCount) +
+        L"  TexFaces " + std::to_wstring(texturedDrawFaces) + L"/" + std::to_wstring(drawFaces.size()) +
         L"  Draw " + std::to_wstring((int)std::clamp(s.drawDistance, kLevelPreviewDrawDistanceMin, kLevelPreviewFarZ)) + fpsBuf +
         L"  (WASD move, Shift 6x, Q/E vertical, click+drag rotate, B: Bilinear, F: Wireframe, C: Cull " + std::wstring(s.cullBackfaces ? L"ON" : L"OFF") +
-        L", R: DirectX " + std::wstring(s.renderDirectX ? L"ON" : L"OFF") + L", G: GPU " + std::wstring(s.gpuAcceleration ? L"ON" : L"OFF") + L", I/K: Draw +/-)";
+        L", T: Textured " + std::wstring(s.texturedOnlyMode ? L"ON" : L"OFF") + L", R: DirectX " + std::wstring(s.renderDirectX ? L"ON" : L"OFF") + L", G: GPU " + std::wstring(s.gpuAcceleration ? L"ON" : L"OFF") + L", I/K: Draw +/-)";
     DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
 }
 
@@ -1721,6 +1729,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         if (s && (wParam == 'B' || wParam == 'b')) { s->bilinearSampling = !s->bilinearSampling; InvalidateRect(hwnd, nullptr, FALSE); }
         if (s && (wParam == 'F' || wParam == 'f')) { s->wireframeMode = !s->wireframeMode; InvalidateRect(hwnd, nullptr, FALSE); }
         if (s && (wParam == 'C' || wParam == 'c')) { s->cullBackfaces = !s->cullBackfaces; InvalidateRect(hwnd, nullptr, FALSE); }
+        if (s && (wParam == 'T' || wParam == 't')) { s->texturedOnlyMode = !s->texturedOnlyMode; InvalidateRect(hwnd, nullptr, FALSE); }
         if (s && (wParam == 'R' || wParam == 'r')) { s->renderDirectX = !s->renderDirectX; InvalidateRect(hwnd, nullptr, FALSE); }
         if (s && (wParam == 'G' || wParam == 'g')) { s->gpuAcceleration = !s->gpuAcceleration; InvalidateRect(hwnd, nullptr, FALSE); }
         if (s && (wParam == 'I' || wParam == 'i')) {
