@@ -940,9 +940,10 @@ struct LevelPreviewState {
     bool wireframeMode = false;
     bool renderDirectX = false;
     bool gpuAcceleration = false;
+    bool cullBackfaces = true;
     LevelPreviewGpu gpu;
     uint64_t gpuTextureEpoch = 0;
-    float drawDistance = 200000.0f;
+    float drawDistance = 60000.0f;
     LevelPreviewBackBuffer backBuffer;
     ULONGLONG lastTickMs = 0;
     ULONGLONG fpsWindowStartMs = 0;
@@ -1060,6 +1061,97 @@ static bool IsProjectedTriangleStable(const POINT& p0, const POINT& p1, const PO
     return llabs(area2) >= 4;
 }
 
+static float SignedArea2D(const std::vector<POINT>& pts) {
+    if (pts.size() < 3) return 0.0f;
+    double area2 = 0.0;
+    for (size_t i = 0; i < pts.size(); ++i) {
+        const POINT& a = pts[i];
+        const POINT& b = pts[(i + 1) % pts.size()];
+        area2 += double(a.x) * double(b.y) - double(a.y) * double(b.x);
+    }
+    return float(area2 * 0.5);
+}
+
+static bool PointInTriangle2D(const POINT& p, const POINT& a, const POINT& b, const POINT& c, bool wantCcw) {
+    auto cross2 = [](const POINT& p0, const POINT& p1, const POINT& p2) -> int64_t {
+        const int64_t ax = int64_t(p1.x) - int64_t(p0.x);
+        const int64_t ay = int64_t(p1.y) - int64_t(p0.y);
+        const int64_t bx = int64_t(p2.x) - int64_t(p0.x);
+        const int64_t by = int64_t(p2.y) - int64_t(p0.y);
+        return ax * by - ay * bx;
+    };
+    const int64_t c0 = cross2(a, b, p);
+    const int64_t c1 = cross2(b, c, p);
+    const int64_t c2 = cross2(c, a, p);
+    if (wantCcw) {
+        return c0 >= 0 && c1 >= 0 && c2 >= 0;
+    }
+    return c0 <= 0 && c1 <= 0 && c2 <= 0;
+}
+
+static std::vector<std::array<size_t, 3>> TriangulatePolygonIndices(const std::vector<POINT>& pts) {
+    std::vector<std::array<size_t, 3>> out;
+    if (pts.size() < 3) return out;
+    if (pts.size() == 3) {
+        out.push_back({ 0u, 1u, 2u });
+        return out;
+    }
+
+    std::vector<size_t> idx;
+    idx.reserve(pts.size());
+    for (size_t i = 0; i < pts.size(); ++i) idx.push_back(i);
+
+    const bool ccw = SignedArea2D(pts) > 0.0f;
+    size_t guard = 0;
+    const size_t guardMax = pts.size() * pts.size();
+    while (idx.size() > 3 && guard < guardMax) {
+        bool clippedEar = false;
+        for (size_t i = 0; i < idx.size(); ++i) {
+            const size_t i0 = idx[(i + idx.size() - 1) % idx.size()];
+            const size_t i1 = idx[i];
+            const size_t i2 = idx[(i + 1) % idx.size()];
+            const POINT& a = pts[i0];
+            const POINT& b = pts[i1];
+            const POINT& c = pts[i2];
+
+            const int64_t ax = int64_t(b.x) - int64_t(a.x);
+            const int64_t ay = int64_t(b.y) - int64_t(a.y);
+            const int64_t bx = int64_t(c.x) - int64_t(a.x);
+            const int64_t by = int64_t(c.y) - int64_t(a.y);
+            const int64_t area2 = ax * by - ay * bx;
+            if (llabs(area2) < 4) continue;
+            if (ccw ? (area2 <= 0) : (area2 >= 0)) continue;
+
+            bool contains = false;
+            for (size_t j = 0; j < idx.size(); ++j) {
+                const size_t ip = idx[j];
+                if (ip == i0 || ip == i1 || ip == i2) continue;
+                if (PointInTriangle2D(pts[ip], a, b, c, ccw)) {
+                    contains = true;
+                    break;
+                }
+            }
+            if (contains) continue;
+
+            out.push_back({ i0, i1, i2 });
+            idx.erase(idx.begin() + i);
+            clippedEar = true;
+            break;
+        }
+        if (!clippedEar) break;
+        ++guard;
+    }
+
+    if (idx.size() == 3) {
+        out.push_back({ idx[0], idx[1], idx[2] });
+    }
+
+    if (out.empty()) {
+        for (size_t ti = 1; ti + 1 < pts.size(); ++ti) out.push_back({ 0u, ti, ti + 1 });
+    }
+    return out;
+}
+
 
 static bool DrawFacesGpu(LevelPreviewState& s, int w, int h, const std::vector<LevelPreviewDrawFace>& drawFaces) {
     if (!s.gpuAcceleration || !s.gpu.EnsureDevice(s.hwnd, w, h) || !s.gpu.dev) return false;
@@ -1083,7 +1175,7 @@ static bool DrawFacesGpu(LevelPreviewState& s, int w, int h, const std::vector<L
     dev->SetRenderState(D3DRS_ZWRITEENABLE, TRUE);
     dev->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
     dev->SetRenderState(D3DRS_LIGHTING, FALSE);
-    dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    dev->SetRenderState(D3DRS_CULLMODE, s.cullBackfaces ? D3DCULL_CCW : D3DCULL_NONE);
     dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
     dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
     dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
@@ -1119,9 +1211,10 @@ static bool DrawFacesGpu(LevelPreviewState& s, int w, int h, const std::vector<L
             dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);
         }
 
-        for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
+        const auto tris = TriangulatePolygonIndices(df.pts);
+        for (const auto& triIdx : tris) {
             GpuPreviewVertex tri[3]{};
-            const size_t idx[3] = { 0, ti, ti + 1 };
+            const size_t idx[3] = { triIdx[0], triIdx[1], triIdx[2] };
             for (int vi = 0; vi < 3; ++vi) {
                 const size_t i = idx[vi];
                 tri[vi].x = (float)df.pts[i].x + 0.5f;
@@ -1330,6 +1423,11 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
             df.hasUvTexture = false;
             df.uvs.clear();
         }
+        if (SignedArea2D(df.pts) > 0.0f) {
+            std::reverse(df.pts.begin(), df.pts.end());
+            std::reverse(df.depths.begin(), df.depths.end());
+            if (!df.uvs.empty()) std::reverse(df.uvs.begin(), df.uvs.end());
+        }
         df.avgDepth = depthSum / (float)df.pts.size();
         drawFaces.push_back(std::move(df));
     }
@@ -1344,11 +1442,14 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
     if (!gpuFacesRendered) for (const auto& df : drawFaces) {
         const auto* tex = (df.hasUvTexture && df.uvs.size() == df.pts.size()) ? TryGetTextureForFace(df.textureTag, df.textureStemHint) : nullptr;
         if (tex && df.pts.size() >= 3) {
-            for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
-                const POINT p0 = df.pts[0], p1 = df.pts[ti], p2 = df.pts[ti + 1];
+            const auto tris = TriangulatePolygonIndices(df.pts);
+            for (const auto& triIdx : tris) {
+                const POINT p0 = df.pts[triIdx[0]], p1 = df.pts[triIdx[1]], p2 = df.pts[triIdx[2]];
                 if (!IsProjectedTriangleStable(p0, p1, p2)) continue;
-                const PreviewUv t0 = df.uvs[0], t1 = df.uvs[ti], t2 = df.uvs[ti + 1];
-                const float z0 = df.depths[0], z1 = df.depths[ti], z2 = df.depths[ti + 1];
+                const int64_t area2 = (int64_t(p1.x) - int64_t(p0.x)) * (int64_t(p2.y) - int64_t(p0.y)) - (int64_t(p1.y) - int64_t(p0.y)) * (int64_t(p2.x) - int64_t(p0.x));
+                if (s.cullBackfaces && area2 >= 0) continue;
+                const PreviewUv t0 = df.uvs[triIdx[0]], t1 = df.uvs[triIdx[1]], t2 = df.uvs[triIdx[2]];
+                const float z0 = df.depths[triIdx[0]], z1 = df.depths[triIdx[1]], z2 = df.depths[triIdx[2]];
 
                 auto normalizeUv = [](float uv, int texDim) -> float {
                     if (!std::isfinite(uv) || texDim <= 0) return 0.0f;
@@ -1430,10 +1531,13 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
             }
         }
         else if (df.pts.size() >= 3 && df.depths.size() == df.pts.size()) {
-            for (size_t ti = 1; ti + 1 < df.pts.size(); ++ti) {
-                const POINT p0 = df.pts[0], p1 = df.pts[ti], p2 = df.pts[ti + 1];
+            const auto tris = TriangulatePolygonIndices(df.pts);
+            for (const auto& triIdx : tris) {
+                const POINT p0 = df.pts[triIdx[0]], p1 = df.pts[triIdx[1]], p2 = df.pts[triIdx[2]];
                 if (!IsProjectedTriangleStable(p0, p1, p2)) continue;
-                const float z0 = df.depths[0], z1 = df.depths[ti], z2 = df.depths[ti + 1];
+                const int64_t area2 = (int64_t(p1.x) - int64_t(p0.x)) * (int64_t(p2.y) - int64_t(p0.y)) - (int64_t(p1.y) - int64_t(p0.y)) * (int64_t(p2.x) - int64_t(p0.x));
+                if (s.cullBackfaces && area2 >= 0) continue;
+                const float z0 = df.depths[triIdx[0]], z1 = df.depths[triIdx[1]], z2 = df.depths[triIdx[2]];
 
                 LONG triMinX = std::min(std::min(p0.x, p1.x), p2.x);
                 LONG triMaxX = std::max(std::max(p0.x, p1.x), p2.x);
@@ -1538,7 +1642,8 @@ static void DrawLevelScene(LevelPreviewState& s, HDC hdc, RECT rc) {
         L"  FLAD/FLAS " + std::to_wstring(s.scene->fladCount) + L"/" + std::to_wstring(s.scene->flasCount) +
         L"  RAWD " + std::to_wstring(s.scene->rawdCount) +
         L"  Draw " + std::to_wstring((int)std::clamp(s.drawDistance, kLevelPreviewDrawDistanceMin, kLevelPreviewFarZ)) + fpsBuf +
-        L"  (WASD move, Shift 6x, Q/E vertical, click+drag rotate, B: Bilinear, F: Wireframe, R: DirectX " + std::wstring(s.renderDirectX ? L"ON" : L"OFF") + L", G: GPU " + std::wstring(s.gpuAcceleration ? L"ON" : L"OFF") + L", I/K: Draw +/-)";
+        L"  (WASD move, Shift 6x, Q/E vertical, click+drag rotate, B: Bilinear, F: Wireframe, C: Cull " + std::wstring(s.cullBackfaces ? L"ON" : L"OFF") +
+        L", R: DirectX " + std::wstring(s.renderDirectX ? L"ON" : L"OFF") + L", G: GPU " + std::wstring(s.gpuAcceleration ? L"ON" : L"OFF") + L", I/K: Draw +/-)";
     DrawTextBottomRight(hdc, rc, msg, RGB(200, 200, 200));
 }
 
@@ -1586,6 +1691,7 @@ static LRESULT CALLBACK LevelPreviewWndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         if (s && wParam < s->keys.size()) s->keys[wParam] = true;
         if (s && (wParam == 'B' || wParam == 'b')) { s->bilinearSampling = !s->bilinearSampling; InvalidateRect(hwnd, nullptr, FALSE); }
         if (s && (wParam == 'F' || wParam == 'f')) { s->wireframeMode = !s->wireframeMode; InvalidateRect(hwnd, nullptr, FALSE); }
+        if (s && (wParam == 'C' || wParam == 'c')) { s->cullBackfaces = !s->cullBackfaces; InvalidateRect(hwnd, nullptr, FALSE); }
         if (s && (wParam == 'R' || wParam == 'r')) { s->renderDirectX = !s->renderDirectX; InvalidateRect(hwnd, nullptr, FALSE); }
         if (s && (wParam == 'G' || wParam == 'g')) { s->gpuAcceleration = !s->gpuAcceleration; InvalidateRect(hwnd, nullptr, FALSE); }
         if (s && (wParam == 'I' || wParam == 'i')) {
